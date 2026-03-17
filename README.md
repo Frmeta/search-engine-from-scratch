@@ -18,3 +18,11 @@ EliasGammaPostingsVBETF                 1048.614        3.104
 ```
 
 Conclusion: VBEPostingsEliasGammaTF -> smallest size
+
+### 2. Adding BM25
+
+Comparing TF-IDF with BM25 over 30 queries
+```
+TF-IDF RBP = 0.5980
+BM25   RBP = 0.6317
+```

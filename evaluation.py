@@ -53,32 +53,46 @@ def load_qrels(qrel_file = "qrels.txt", max_q_id = 30, max_doc_id = 1033):
 
 ######## >>>>> EVALUATION!
 
+def extract_doc_id(doc_path):
+  """Extract numeric document id from a path like ./collection/1/123.txt."""
+  match = re.search(r'/([^/]+)\.txt$', doc_path)
+  if match is None:
+    raise ValueError(f"Cannot parse doc id from path: {doc_path}")
+  return int(match.group(1))
+
 def eval(qrels, query_file = "queries.txt", k = 1000):
   """ 
-    Iterate over all 30 queries, compute a score per query,
-    then compute the MEAN SCORE over those 30 queries.
-    For each query, return top-1000 documents.
+    Iterate over all 30 queries and compute mean RBP for
+    both TF-IDF and BM25 over top-k retrieved documents.
   """
   BSBI_instance = BSBIIndex(data_dir = 'collection', \
                           postings_encoding = VBEPostingsEliasGammaTF, \
                           output_dir = 'index')
 
   with open(query_file) as file:
-    rbp_scores = []
+    rbp_scores_tfidf = []
+    rbp_scores_bm25 = []
     for qline in file:
       parts = qline.strip().split()
       qid = parts[0]
       query = " ".join(parts[1:])
 
       # Be careful: doc IDs from indexing may differ from the IDs listed in qrels.
-      ranking = []
+      ranking_tfidf = []
       for (score, doc) in BSBI_instance.retrieve_tfidf(query, k = k):
-          did = int(re.search(r'\/.*\/.*\/(.*)\.txt', doc).group(1))
-          ranking.append(qrels[qid][did])
-      rbp_scores.append(rbp(ranking))
+          did = extract_doc_id(doc)
+          ranking_tfidf.append(qrels[qid][did])
+      rbp_scores_tfidf.append(rbp(ranking_tfidf))
 
-  print("TF-IDF evaluation results over 30 queries")
-  print("RBP score =", sum(rbp_scores) / len(rbp_scores))
+      ranking_bm25 = []
+      for (score, doc) in BSBI_instance.retrieve_bm25(query, k = k):
+          did = extract_doc_id(doc)
+          ranking_bm25.append(qrels[qid][did])
+      rbp_scores_bm25.append(rbp(ranking_bm25))
+
+  print("Evaluation results over 30 queries")
+  print("TF-IDF RBP =", sum(rbp_scores_tfidf) / len(rbp_scores_tfidf))
+  print("BM25   RBP =", sum(rbp_scores_bm25) / len(rbp_scores_bm25))
 
 if __name__ == '__main__':
   qrels = load_qrels()
