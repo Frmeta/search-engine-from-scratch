@@ -1,11 +1,29 @@
-from bsbi import BSBIIndex
+import argparse
+from bsbi import BSBIIndex, SPIMIIndex
 from compression import VBEPostingsEliasGammaTF
 
-# indexing has already been performed
-# BSBIIndex is only an abstraction for that index
-BSBI_instance = BSBIIndex(data_dir = 'collection', \
-                          postings_encoding = VBEPostingsEliasGammaTF, \
-                          output_dir = 'index')
+parser = argparse.ArgumentParser(description="Search with BSBI or SPIMI index")
+parser.add_argument(
+    "--spimi",
+    action="store_true",
+    help="Use SPIMI indexing instead of BSBI",
+)
+args = parser.parse_args()
+
+# Indexing has already been performed
+# BSBIIndex/SPIMIIndex is an abstraction for that index
+if args.spimi:
+    index_instance = SPIMIIndex(
+        data_dir='collection',
+        postings_encoding=VBEPostingsEliasGammaTF,
+        output_dir='index'
+    )
+else:
+    index_instance = BSBIIndex(
+        data_dir='collection',
+        postings_encoding=VBEPostingsEliasGammaTF,
+        output_dir='index'
+    )
 
 queries = ["alkylated with radioactive iodoacetate", \
            "psychodrama for disturbed children", \
@@ -14,9 +32,9 @@ queries = ["alkylated with radioactive iodoacetate", \
 for query in queries:
     print("Query  : ", query)
     print("TF-IDF Results:")
-    for (score, doc) in BSBI_instance.retrieve_tfidf(query, k = 10):
+    for (score, doc) in index_instance.retrieve_tfidf(query, k = 10):
          print(f"{doc:30} {score:>.3f}")
     print("BM25 Results:")
-    for (score, doc) in BSBI_instance.retrieve_bm25(query, k = 10):
+    for (score, doc) in index_instance.retrieve_bm25(query, k = 10):
         print(f"{doc:30} {score:>.3f}")
     print()

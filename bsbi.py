@@ -6,6 +6,7 @@ import time
 import math
 import shutil
 import argparse
+import sys
 from bisect import bisect_left
 
 from index import InvertedIndexReader, InvertedIndexWriter
@@ -409,12 +410,125 @@ class BSBIIndex:
                 self.merge(indices, merged_index)
 
 
+class SPIMIIndex(BSBIIndex):
+    """
+    SPIMI (Single-Pass In-Memory Indexing) - Block-based memory-efficient indexing.
+    
+    Instead of using memory thresholds, SPIMI processes each block (directory) sequentially:
+    1. Process all documents in one block into a single in-memory dictionary
+    2. Write the complete block dictionary to disk
+    3. Move to the next block with a fresh dictionary
+    4. Merge all blocks at the end
+    
+    Key difference from BSBI:
+    - BSBI: creates (term_id, doc_id) pairs, then inverts them
+    - SPIMI: builds inverted dict directly (term_id -> doc_ids, tfs) for efficiency
+    
+    Attributes
+    ----------
+    term_id_map(IdMap): Maps terms to termIDs
+    doc_id_map(IdMap): Maps relative document paths to docIDs
+    data_dir(str): Path to data
+    output_dir(str): Path to output index files
+    postings_encoding: Compression scheme for postings
+    index_name(str): Name of the final merged index file
+    """
+    
+    def __init__(self, data_dir, output_dir, postings_encoding, index_name="main_index"):
+        super().__init__(data_dir, output_dir, postings_encoding, index_name)
+    
+    def parse_block_spimi(self, block_dir_relative):
+        """
+        Parse all documents in a block into inverted dictionary format.
+        More efficient than BSBI's parse_block since it builds
+        the inverted index directly instead of creating intermediate (term, doc) pairs.
+        
+        Parameters
+        ----------
+        block_dir_relative : str
+            Relative path to the block directory
+            
+        Returns
+        -------
+        Dict[int, Tuple[Set[int], Dict[int, int]]]
+            Inverted dictionary mapping term_id -> (set of doc_ids, dict of doc_id->tf)
+        """
+        dir_path = "./" + self.data_dir + "/" + block_dir_relative
+        inverted_dict = {}  # term_id -> (set of doc_ids, dict of doc_id -> tf)
+        
+        # Process all documents in the block
+        for filename in next(os.walk(dir_path))[2]:
+            doc_path = dir_path + "/" + filename
+            with open(doc_path, "r", encoding="utf8", errors="surrogateescape") as f:
+                doc_id = self.doc_id_map[doc_path]
+                
+                # Extract and index all tokens in this document
+                for token in f.read().split():
+                    term_id = self.term_id_map[token]
+                    
+                    # Initialize if term not seen before
+                    if term_id not in inverted_dict:
+                        inverted_dict[term_id] = (set(), {})  # (doc_set, doc->tf_dict)
+                    
+                    doc_set, tf_dict = inverted_dict[term_id]
+                    doc_set.add(doc_id)
+                    
+                    if doc_id not in tf_dict:
+                        tf_dict[doc_id] = 0
+                    tf_dict[doc_id] += 1
+        
+        return inverted_dict
+    
+    def index(self):
+        """
+        SPIMI indexing: Process each block sequentially with in-memory dictionaries.
+        
+        Algorithm:
+        1. For each block (directory) in collection
+        2. Parse all documents in block directly into inverted dictionary
+        3. Convert to sorted format and write block to disk
+        4. Move to next block with fresh dictionary
+        5. Merge all blocks at the end
+        """
+        # Loop over each sub-directory in collection folder (each block)
+        for block_dir_relative in tqdm(sorted(next(os.walk(self.data_dir))[1]), desc="SPIMI Indexing"):
+            # Parse block directly into inverted dictionary format
+            inverted_dict = self.parse_block_spimi(block_dir_relative)
+            
+            # Write block to disk using same format as BSBI's invert_write
+            if inverted_dict:
+                index_id = f'intermediate_index_{block_dir_relative}'
+                self.intermediate_indices.append(index_id)
+                with InvertedIndexWriter(index_id, self.postings_encoding, directory=self.output_dir) as index:
+                    # Convert dictionary to sorted format for writing (same as invert_write)
+                    for term_id in sorted(inverted_dict.keys()):
+                        doc_set, tf_dict = inverted_dict[term_id]
+                        sorted_doc_ids = sorted(list(doc_set))
+                        tf_list = [tf_dict[doc_id] for doc_id in sorted_doc_ids]
+                        index.append(term_id, sorted_doc_ids, tf_list)
+        
+        self.save()
+
+        # Merge all intermediate indices into final index
+        with InvertedIndexWriter(self.index_name, self.postings_encoding, directory=self.output_dir) as merged_index:
+            with contextlib.ExitStack() as stack:
+                indices = [stack.enter_context(InvertedIndexReader(index_id, self.postings_encoding, directory=self.output_dir))
+                          for index_id in self.intermediate_indices]
+                if indices:  # Only merge if there are indices
+                    self.merge(indices, merged_index)
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="BSBI indexing runner")
+    parser = argparse.ArgumentParser(description="Indexing runner (BSBI or SPIMI)")
     parser.add_argument(
         "--debug",
         action="store_true",
         help="Compare all postings encodings (size in KB and indexing time)",
+    )
+    parser.add_argument(
+        "--spimi",
+        action="store_true",
+        help="Use SPIMI indexing instead of BSBI",
     )
     args = parser.parse_args()
 
@@ -457,24 +571,40 @@ if __name__ == "__main__":
         for codec in codecs:
             clean_output_dir('index')
             start = time.perf_counter()
-            BSBIIndex(
-                data_dir='collection',
-                postings_encoding=codec,
-                output_dir='index'
-            ).index()
+            if args.spimi:
+                SPIMIIndex(
+                    data_dir='collection',
+                    postings_encoding=codec,
+                    output_dir='index'
+                ).index()
+            else:
+                BSBIIndex(
+                    data_dir='collection',
+                    postings_encoding=codec,
+                    output_dir='index'
+                ).index()
             elapsed = time.perf_counter() - start
             size_kb = non_intermediate_index_size_kb('index')
             results.append((codec.__name__, size_kb, elapsed))
 
-        print("\npostings_encoding comparison (non-intermediate size & indexing time)")
+        indexer_name = "SPIMI" if args.spimi else "BSBI"
+        print(f"\n{indexer_name} postings_encoding comparison (non-intermediate size & indexing time)")
         print(f"{'Codec':35} {'Size (KB)':>12} {'Time (s)':>12}")
         print("-" * 62)
         for name, size_kb, elapsed in results:
             print(f"{name:35} {size_kb:12.3f} {elapsed:12.3f}")
     else:
-        BSBI_instance = BSBIIndex(
-            data_dir='collection',
-            postings_encoding=VBEPostingsEliasGammaTF,
-            output_dir='index'
-        )
-        BSBI_instance.index()  # start indexing
+        if args.spimi:
+            spimi_instance = SPIMIIndex(
+                data_dir='collection',
+                postings_encoding=VBEPostingsEliasGammaTF,
+                output_dir='index'
+            )
+            spimi_instance.index()  # start SPIMI indexing
+        else:
+            bsbi_instance = BSBIIndex(
+                data_dir='collection',
+                postings_encoding=VBEPostingsEliasGammaTF,
+                output_dir='index'
+            )
+            bsbi_instance.index()  # start BSBI indexing

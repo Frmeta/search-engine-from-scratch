@@ -46,3 +46,23 @@ BM25   AP   = 0.5558783234012998
 BM25 brute-force avg/query (s) = 0.0541
 BM25 WAND avg/query (s)        = 0.0523
 ```
+
+## Bonus
+
+### 5. Adding SPIMI
+```
+python bsbi.py --spimi
+```
+BSBI (Block-Sort-Based Indexing)
+- Processes each block (directory) separately
+- Creates one inverted index per block
+- Fixed memory usage per block
+- Merges all block indices at the end
+
+SPIMI (Single-Pass In-Memory Indexing)
+- Processes all documents sequentially
+- Maintains a single in-memory dictionary
+- Dynamically flushes to disk when memory threshold is exceeded
+- More memory-efficient for varying document sizes
+- Merges all flushed blocks at the end
+### 6. 
