@@ -6,6 +6,7 @@ import time
 import math
 import shutil
 import argparse
+from bisect import bisect_left
 
 from index import InvertedIndexReader, InvertedIndexWriter
 from util import IdMap, sorted_merge_posts_and_tfs
@@ -279,6 +280,106 @@ class BSBIIndex:
 
             docs = [(score, self.doc_id_map[doc_id]) for (doc_id, score) in scores.items()]
             return sorted(docs, key = lambda x: x[0], reverse = True)[:k]
+
+    def retrieve_bm25_wand(self, query, k = 10, k1 = 1.2, b = 0.75):
+        """
+        Perform top-k BM25 retrieval with WAND pruning.
+
+        This method avoids scoring every matching document by using
+        per-term upper bounds and dynamic thresholding.
+        """
+        if len(self.term_id_map) == 0 or len(self.doc_id_map) == 0:
+            self.load()
+
+        query_terms = [self.term_id_map[word] for word in query.split()]
+        with InvertedIndexReader(self.index_name, self.postings_encoding, directory=self.output_dir) as merged_index:
+            N = len(merged_index.doc_length)
+            if N == 0:
+                return []
+
+            avgdl = merged_index.avg_doc_length if merged_index.avg_doc_length > 0 else 1.0
+            min_dl = min(merged_index.doc_length.values()) if merged_index.doc_length else 0
+            min_dl_norm = (1 - b + b * (min_dl / avgdl)) if avgdl > 0 else 1.0
+
+            term_states = []
+            for term in query_terms:
+                if term not in merged_index.postings_dict:
+                    continue
+
+                postings, tf_list = merged_index.get_postings_list(term)
+                if not postings:
+                    continue
+
+                df, max_tf_meta = merged_index.get_term_stats(term)
+                max_tf = max_tf_meta if max_tf_meta is not None else max(tf_list)
+                idf = math.log(1 + ((N - df + 0.5) / (df + 0.5)))
+                denom_ub = max_tf + k1 * min_dl_norm
+                ub = idf * ((max_tf * (k1 + 1)) / denom_ub) if denom_ub > 0 else 0.0
+
+                term_states.append({
+                    "postings": postings,
+                    "tf_list": tf_list,
+                    "idf": idf,
+                    "ub": ub,
+                    "ptr": 0,
+                })
+
+            if not term_states:
+                return []
+
+            topk_heap = []
+            threshold = 0.0
+
+            while True:
+                active_states = [s for s in term_states if s["ptr"] < len(s["postings"])]
+                if not active_states:
+                    break
+
+                active_states.sort(key=lambda s: s["postings"][s["ptr"]])
+
+                ub_sum = 0.0
+                pivot_idx = None
+                for i, state in enumerate(active_states):
+                    ub_sum += state["ub"]
+                    if ub_sum > threshold:
+                        pivot_idx = i
+                        break
+
+                if pivot_idx is None:
+                    break
+
+                pivot_doc = active_states[pivot_idx]["postings"][active_states[pivot_idx]["ptr"]]
+                smallest_doc = active_states[0]["postings"][active_states[0]["ptr"]]
+
+                if smallest_doc == pivot_doc:
+                    score = 0.0
+                    dl = merged_index.doc_length.get(pivot_doc, 0)
+                    dl_norm = (1 - b + b * (dl / avgdl)) if avgdl > 0 else 1.0
+
+                    for state in active_states:
+                        ptr = state["ptr"]
+                        if state["postings"][ptr] != pivot_doc:
+                            continue
+                        tf = state["tf_list"][ptr]
+                        denom = tf + k1 * dl_norm
+                        if denom > 0:
+                            score += state["idf"] * ((tf * (k1 + 1)) / denom)
+                        state["ptr"] += 1
+
+                    if score > threshold:
+                        heapq.heappush(topk_heap, (score, pivot_doc))
+                        if len(topk_heap) > k:
+                            heapq.heappop(topk_heap)
+                        if len(topk_heap) == k:
+                            threshold = topk_heap[0][0]
+                else:
+                    for state in active_states[:pivot_idx]:
+                        ptr = state["ptr"]
+                        if state["postings"][ptr] < pivot_doc:
+                            state["ptr"] = bisect_left(state["postings"], pivot_doc, ptr)
+
+            topk = sorted(topk_heap, key=lambda x: x[0], reverse=True)
+            return [(score, self.doc_id_map[doc_id]) for (score, doc_id) in topk]
 
     def index(self):
         """

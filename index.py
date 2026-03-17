@@ -14,19 +14,21 @@ class InvertedIndex:
             termID -> (start_position_in_index_file,
                        number_of_postings_in_list,
                        length_in_bytes_of_postings_list,
-                       length_in_bytes_of_tf_list)
+                       length_in_bytes_of_tf_list,
+                       max_tf_in_postings)
 
           postings_dict is the Dictionary component of the inverted index.
           It is assumed this structure can be fully loaded in memory.
 
           As the name implies, this Dictionary is implemented as a Python dict
-          mapping a term ID (integer) to a 4-tuple:
+          mapping a term ID (integer) to a 5-tuple:
               1. start_position_in_index_file: byte offset where the associated
                   postings are stored in the index file; can be reached with seek.
               2. number_of_postings_in_list: number of docIDs in the postings list
                   (Document Frequency)
               3. length_in_bytes_of_postings_list: byte length of the postings list
               4. length_in_bytes_of_tf_list: byte length of the associated TF list
+              5. max_tf_in_postings: max TF value for this term across all docs
 
     terms: List[int]
         List of term IDs used to preserve insertion order in the inverted index.
@@ -142,10 +144,16 @@ class InvertedIndexReader(InvertedIndex):
         index file so it fits in memory. Do not load the entire index.
         """
         curr_term = next(self.term_iter)
-        pos, number_of_postings, len_in_bytes_of_postings, len_in_bytes_of_tf = self.postings_dict[curr_term]
+        pos, number_of_postings, len_in_bytes_of_postings, len_in_bytes_of_tf = self.postings_dict[curr_term][:4]
         postings_list = self.postings_encoding.decode(self.index_file.read(len_in_bytes_of_postings))
         tf_list = self.postings_encoding.decode_tf(self.index_file.read(len_in_bytes_of_tf))
         return (curr_term, postings_list, tf_list)
+
+    def get_term_stats(self, term):
+        """Return (df, max_tf) term statistics for retrieval-time pruning."""
+        _, number_of_postings, _, _, *rest = self.postings_dict[term]
+        max_tf = rest[0] if rest else None
+        return (number_of_postings, max_tf)
 
     def get_postings_list(self, term):
         """
@@ -156,7 +164,7 @@ class InvertedIndexReader(InvertedIndex):
         It should directly jump to the relevant byte offset in the index file
         where postings and TF list for the term are stored.
         """
-        pos, number_of_postings, len_in_bytes_of_postings, len_in_bytes_of_tf = self.postings_dict[term]
+        pos, number_of_postings, len_in_bytes_of_postings, len_in_bytes_of_tf = self.postings_dict[term][:4]
         self.index_file.seek(pos)
         postings_list = self.postings_encoding.decode(self.index_file.read(len_in_bytes_of_postings))
         tf_list = self.postings_encoding.decode_tf(self.index_file.read(len_in_bytes_of_tf))
@@ -222,8 +230,9 @@ class InvertedIndexWriter(InvertedIndex):
         compressed_tf_list = self.postings_encoding.encode_tf(tf_list)
         self.index_file.write(compressed_postings)
         self.index_file.write(compressed_tf_list)
+        max_tf = max(tf_list) if tf_list else 0
         self.postings_dict[term] = (curr_position_in_byte, len(postings_list), \
-                                    len(compressed_postings), len(compressed_tf_list))
+                        len(compressed_postings), len(compressed_tf_list), max_tf)
 
 
 if __name__ == "__main__":
@@ -239,11 +248,13 @@ if __name__ == "__main__":
         assert index.postings_dict == {1: (0, \
                                            5, \
                                            len(VBEPostings.encode([2,3,4,8,10])), \
-                                           len(VBEPostings.encode_tf([2,4,2,3,30]))),
+                                           len(VBEPostings.encode_tf([2,4,2,3,30])),
+                                           30),
                                        2: (len(VBEPostings.encode([2,3,4,8,10])) + len(VBEPostings.encode_tf([2,4,2,3,30])), \
                                            3, \
                                            len(VBEPostings.encode([3,4,5])), \
-                                           len(VBEPostings.encode_tf([34,23,56])))}, "postings dictionary is incorrect"
+                                           len(VBEPostings.encode_tf([34,23,56])),
+                                           56)}, "postings dictionary is incorrect"
         
         index.index_file.seek(index.postings_dict[2][0])
         assert VBEPostings.decode(index.index_file.read(len(VBEPostings.encode([3,4,5])))) == [3,4,5], "there is an error"

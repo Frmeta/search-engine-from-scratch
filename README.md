@@ -40,3 +40,9 @@ BM25   DCG  = 5.613506000661405
 BM25   NDCG = 0.8144864857338686
 BM25   AP   = 0.5558783234012998
 ```
+
+### 4. Adding WAND Top-K Retrieval for BM25
+```
+BM25 brute-force avg/query (s) = 0.0541
+BM25 WAND avg/query (s)        = 0.0523
+```

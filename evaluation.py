@@ -1,5 +1,6 @@
 import re
 import math
+import time
 from bsbi import BSBIIndex
 from compression import VBEPostingsEliasGammaTF
 from tqdm import tqdm
@@ -115,6 +116,14 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
     ndcg_scores_bm25 = []
     ap_scores_bm25 = []
 
+    rbp_scores_bm25_wand = []
+    dcg_scores_bm25_wand = []
+    ndcg_scores_bm25_wand = []
+    ap_scores_bm25_wand = []
+
+    total_time_bm25 = 0.0
+    total_time_bm25_wand = 0.0
+
     for qline in tqdm(query_lines, desc="Evaluating queries"):
       parts = qline.strip().split()
       qid = parts[0]
@@ -131,7 +140,10 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
           ap_scores_tfidf.append(ap(ranking_tfidf))
 
       ranking_bm25 = []
-      for (score, doc) in BSBI_instance.retrieve_bm25(query, k = k):
+      start_bm25 = time.perf_counter()
+      results_bm25 = BSBI_instance.retrieve_bm25(query, k = k)
+      total_time_bm25 += (time.perf_counter() - start_bm25)
+      for (score, doc) in results_bm25:
           did = extract_doc_id(doc)
           ranking_bm25.append(qrels[qid][did])
           rbp_scores_bm25.append(rbp(ranking_bm25))
@@ -139,15 +151,56 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
           ndcg_scores_bm25.append(ndcg(ranking_bm25))
           ap_scores_bm25.append(ap(ranking_bm25))
 
+      ranking_bm25_wand = []
+      start_bm25_wand = time.perf_counter()
+      results_bm25_wand = BSBI_instance.retrieve_bm25_wand(query, k = k)
+      total_time_bm25_wand += (time.perf_counter() - start_bm25_wand)
+      for (score, doc) in results_bm25_wand:
+          did = extract_doc_id(doc)
+          ranking_bm25_wand.append(qrels[qid][did])
+          rbp_scores_bm25_wand.append(rbp(ranking_bm25_wand))
+          dcg_scores_bm25_wand.append(dcg(ranking_bm25_wand))
+          ndcg_scores_bm25_wand.append(ndcg(ranking_bm25_wand))
+          ap_scores_bm25_wand.append(ap(ranking_bm25_wand))
+
+  def fmt_num(value):
+    # Keep output concise with up to 4 decimals while avoiding trailing zeros.
+    text = f"{value:.4f}"
+    return text.rstrip("0").rstrip(".")
+
+  def print_aligned(rows):
+    width = max(len(label) for label, _ in rows)
+    for label, value in rows:
+      print(f"{label:<{width}} = {fmt_num(value)}")
+
   print("Evaluation results over 30 queries")
-  print("TF-IDF RBP  =", sum(rbp_scores_tfidf) / len(rbp_scores_tfidf))
-  print("TF-IDF DCG  =", sum(dcg_scores_tfidf) / len(dcg_scores_tfidf))
-  print("TF-IDF NDCG =", sum(ndcg_scores_tfidf) / len(ndcg_scores_tfidf))
-  print("TF-IDF AP   =", sum(ap_scores_tfidf) / len(ap_scores_tfidf))
-  print("BM25   RBP  =", sum(rbp_scores_bm25) / len(rbp_scores_bm25))
-  print("BM25   DCG  =", sum(dcg_scores_bm25) / len(dcg_scores_bm25))
-  print("BM25   NDCG =", sum(ndcg_scores_bm25) / len(ndcg_scores_bm25))
-  print("BM25   AP   =", sum(ap_scores_bm25) / len(ap_scores_bm25))
+  print_aligned([
+    ("TF-IDF RBP", sum(rbp_scores_tfidf) / len(rbp_scores_tfidf)),
+    ("TF-IDF DCG", sum(dcg_scores_tfidf) / len(dcg_scores_tfidf)),
+    ("TF-IDF NDCG", sum(ndcg_scores_tfidf) / len(ndcg_scores_tfidf)),
+    ("TF-IDF AP", sum(ap_scores_tfidf) / len(ap_scores_tfidf)),
+    ("BM25 RBP", sum(rbp_scores_bm25) / len(rbp_scores_bm25)),
+    ("BM25 DCG", sum(dcg_scores_bm25) / len(dcg_scores_bm25)),
+    ("BM25 NDCG", sum(ndcg_scores_bm25) / len(ndcg_scores_bm25)),
+    ("BM25 AP", sum(ap_scores_bm25) / len(ap_scores_bm25)),
+    ("BM25+WAND RBP", sum(rbp_scores_bm25_wand) / len(rbp_scores_bm25_wand)),
+    ("BM25+WAND DCG", sum(dcg_scores_bm25_wand) / len(dcg_scores_bm25_wand)),
+    ("BM25+WAND NDCG", sum(ndcg_scores_bm25_wand) / len(ndcg_scores_bm25_wand)),
+    ("BM25+WAND AP", sum(ap_scores_bm25_wand) / len(ap_scores_bm25_wand)),
+  ])
+
+  n_queries = len(query_lines)
+  print("\nRetrieval time comparison (30 queries)")
+  print_aligned([
+    ("BM25 brute-force total (s)", total_time_bm25),
+    ("BM25 WAND total (s)", total_time_bm25_wand),
+    ("BM25 brute-force avg/query (s)", total_time_bm25 / n_queries),
+    ("BM25 WAND avg/query (s)", total_time_bm25_wand / n_queries),
+  ])
+  if total_time_bm25_wand > 0:
+    print_aligned([
+      ("Speedup (brute/WAND)", total_time_bm25 / total_time_bm25_wand),
+    ])
 
 if __name__ == '__main__':
   qrels = load_qrels()
@@ -155,4 +208,4 @@ if __name__ == '__main__':
   assert qrels["Q1"][166] == 1, "qrels is incorrect"
   assert qrels["Q1"][300] == 0, "qrels is incorrect"
 
-  eval(qrels)
+  eval(qrels, k=10)
