@@ -5,3 +5,4 @@ pandas>=1.3.0
 python-terrier>=0.9.1
 tqdm>=4.62.0
 Flask>=2.3.0
+gunicorn>=21.2.0

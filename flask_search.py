@@ -1,4 +1,5 @@
 import argparse
+import os
 from threading import Lock
 from pathlib import Path
 
@@ -15,6 +16,9 @@ INDEX_INSTANCE = None
 ADAPTIVE_RETRIEVER = None
 ADAPTIVE_ERROR = None
 INIT_LOCK = Lock()
+LSI_OUTPUT_DIR = os.getenv("LSI_OUTPUT_DIR", "lsi_index")
+SPIMI_MODE = os.getenv("SPIMI", "false").strip().lower() in {"1", "true", "yes", "on"}
+ADAPTIVE_INDEX_DIR = os.getenv("ADAPTIVE_INDEX_DIR", "pt_index")
 
 HTML_PAGE = """
 <!doctype html>
@@ -320,23 +324,23 @@ def _format_hits(hits):
 
 
 def _resolve_doc_path(path_str):
-  if not path_str:
-    raise ValueError("Missing document path")
+    if not path_str:
+        raise ValueError("Missing document path")
 
-  raw = Path(path_str.strip())
-  if raw.is_absolute():
-    candidate = raw
-  else:
-    candidate = (Path.cwd() / raw).resolve()
+    raw = Path(path_str.strip())
+    if raw.is_absolute():
+        candidate = raw
+    else:
+        candidate = (Path.cwd() / raw).resolve()
 
-  allowed_root = (Path.cwd() / "collection").resolve()
-  if not str(candidate).startswith(str(allowed_root)):
-    raise ValueError("Document path is outside collection directory")
+    allowed_root = (Path.cwd() / "collection").resolve()
+    if not str(candidate).startswith(str(allowed_root)):
+        raise ValueError("Document path is outside collection directory")
 
-  if not candidate.is_file():
-    raise ValueError("Document not found")
+    if not candidate.is_file():
+        raise ValueError("Document not found")
 
-  return candidate
+    return candidate
 
 
 def initialize_engine(spimi=False, adaptive_index_dir="pt_index"):
@@ -382,35 +386,35 @@ def search_api():
     use_patricia = _to_bool(body.get("use_patricia"), default=False)
     method = (body.get("method") or "bm25").strip().lower()
     method_labels = {
-      "tfidf": "TF-IDF",
-      "bm25": "BM25",
-      "lsi": "LSI+FAISS",
+        "tfidf": "TF-IDF",
+        "bm25": "BM25",
+        "lsi": "LSI+FAISS",
     }
     if method not in method_labels:
-      return jsonify({"error": "Invalid method. Use one of: tfidf, bm25, lsi"}), 400
+        return jsonify({"error": "Invalid method. Use one of: tfidf, bm25, lsi"}), 400
 
     warnings = []
 
     hits = []
     if method == "tfidf":
-      hits = INDEX_INSTANCE.retrieve_tfidf(query, k=topk, use_patricia=use_patricia)
+        hits = INDEX_INSTANCE.retrieve_tfidf(query, k=topk, use_patricia=use_patricia)
     elif method == "bm25":
-      hits = INDEX_INSTANCE.retrieve_bm25(query, k=topk, use_patricia=use_patricia)
+        hits = INDEX_INSTANCE.retrieve_bm25(query, k=topk, use_patricia=use_patricia)
     else:
-      try:
-        hits = query_lsi(args.lsi_output_dir, query, topk=topk)
-      except Exception as exc:
-        warnings.append(f"LSI+FAISS failed: {exc}")
-        hits = []
+        try:
+            hits = query_lsi(LSI_OUTPUT_DIR, query, topk=topk)
+        except Exception as exc:
+            warnings.append(f"LSI+FAISS failed: {exc}")
+            hits = []
 
     return jsonify(
         {
             "query": query,
             "topk": topk,
-          "method": method,
-          "method_label": method_labels[method],
+            "method": method,
+            "method_label": method_labels[method],
             "warnings": warnings,
-          "results": _format_hits(hits),
+            "results": _format_hits(hits),
         }
     )
 
@@ -449,5 +453,9 @@ def build_args():
 
 if __name__ == "__main__":
     args = build_args()
+    LSI_OUTPUT_DIR = args.lsi_output_dir
     initialize_engine(spimi=args.spimi, adaptive_index_dir=args.adaptive_index_dir)
     app.run(host=args.host, port=args.port, debug=args.debug)
+else:
+    # Gunicorn imports module as flask_search:app, so initialize here.
+    initialize_engine(spimi=SPIMI_MODE, adaptive_index_dir=ADAPTIVE_INDEX_DIR)
