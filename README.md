@@ -186,12 +186,18 @@ python .\evaluation.py --use-patricia
 ```
 
 Patricia Tree visualizations of the whole vocabulary
-- Normal [[html]](html/patricia-tree.html)
+- Normal [[html]](html/patricia-tree.html)<br>
+
 ![alt text](img/patricia-tree.png)
-- Mindmap [[html]](html/patricia-tree-mindmap.html)
+
+- Mindmap [[html]](html/patricia-tree-mindmap.html)<br>
+
 ![alt text](img/patricia-tree-mindmap.png)
-- Folders [[html]](html/patricia-tree-folder.html)
+
+- Folders [[html]](html/patricia-tree-folder.html)<br>
+
 ![alt text](img/patricia-tree-folder.png)
+
 
 ### 7. Adding LSI + FAISS (Vector Indexing)
 
