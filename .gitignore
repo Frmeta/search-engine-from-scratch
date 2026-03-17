@@ -5,3 +5,5 @@ index/*
 
 tmp/*
 !tmp/.gitkeep
+
+lsi_index/

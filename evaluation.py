@@ -2,8 +2,13 @@ import re
 import math
 import time
 import argparse
+from pathlib import Path
+
+import numpy as np
 from bsbi import BSBIIndex
 from compression import VBEPostingsEliasGammaTF
+from lsi_faiss import load_lsi
+from sklearn.preprocessing import normalize
 from tqdm import tqdm
 
 ######## >>>>> an IR metric: RBP p = 0.8
@@ -96,7 +101,7 @@ def extract_doc_id(doc_path):
     raise ValueError(f"Cannot parse doc id from path: {doc_path}")
   return int(match.group(1))
 
-def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False):
+def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False, lsi_output_dir = None):
   """ 
     Iterate over all 30 queries and compute mean RBP for
     both TF-IDF and BM25 over top-k retrieved documents.
@@ -122,8 +127,18 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False):
     ndcg_scores_bm25_wand = []
     ap_scores_bm25_wand = []
 
+    rbp_scores_lsi = []
+    dcg_scores_lsi = []
+    ndcg_scores_lsi = []
+    ap_scores_lsi = []
+
     total_time_bm25 = 0.0
     total_time_bm25_wand = 0.0
+    total_time_lsi = 0.0
+
+    lsi_ready = lsi_output_dir is not None and Path(lsi_output_dir).exists()
+    if lsi_ready:
+      lsi_index, lsi_vectorizer, lsi_svd, lsi_meta = load_lsi(lsi_output_dir)
 
     for qline in tqdm(query_lines, desc="Evaluating queries"):
       parts = qline.strip().split()
@@ -164,6 +179,25 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False):
           ndcg_scores_bm25_wand.append(ndcg(ranking_bm25_wand))
           ap_scores_bm25_wand.append(ap(ranking_bm25_wand))
 
+      if lsi_ready:
+        ranking_lsi = []
+        start_lsi = time.perf_counter()
+        q_tfidf = lsi_vectorizer.transform([query])
+        q_lsi = lsi_svd.transform(q_tfidf).astype(np.float32)
+        q_lsi = normalize(q_lsi, norm="l2", copy=False)
+        _, doc_ids = lsi_index.search(q_lsi, k)
+        total_time_lsi += (time.perf_counter() - start_lsi)
+
+        for doc_id in doc_ids[0]:
+          if doc_id < 0:
+            continue
+          did = extract_doc_id(lsi_meta["doc_paths"][int(doc_id)])
+          ranking_lsi.append(qrels[qid][did])
+          rbp_scores_lsi.append(rbp(ranking_lsi))
+          dcg_scores_lsi.append(dcg(ranking_lsi))
+          ndcg_scores_lsi.append(ndcg(ranking_lsi))
+          ap_scores_lsi.append(ap(ranking_lsi))
+
   def fmt_num(value):
     # Keep output concise with up to 4 decimals while avoiding trailing zeros.
     text = f"{value:.4f}"
@@ -189,6 +223,13 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False):
     ("BM25+WAND NDCG", sum(ndcg_scores_bm25_wand) / len(ndcg_scores_bm25_wand)),
     ("BM25+WAND AP", sum(ap_scores_bm25_wand) / len(ap_scores_bm25_wand)),
   ])
+  if lsi_ready and rbp_scores_lsi:
+    print_aligned([
+      ("LSI+FAISS RBP", sum(rbp_scores_lsi) / len(rbp_scores_lsi)),
+      ("LSI+FAISS DCG", sum(dcg_scores_lsi) / len(dcg_scores_lsi)),
+      ("LSI+FAISS NDCG", sum(ndcg_scores_lsi) / len(ndcg_scores_lsi)),
+      ("LSI+FAISS AP", sum(ap_scores_lsi) / len(ap_scores_lsi)),
+    ])
 
   n_queries = len(query_lines)
   print("\nRetrieval time comparison (30 queries)")
@@ -198,9 +239,19 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False):
     ("BM25 brute-force avg/query (s)", total_time_bm25 / n_queries),
     ("BM25 WAND avg/query (s)", total_time_bm25_wand / n_queries),
   ])
+  if lsi_ready:
+    print_aligned([
+      ("LSI+FAISS total (s)", total_time_lsi),
+      ("LSI+FAISS avg/query (s)", total_time_lsi / n_queries),
+    ])
   if total_time_bm25_wand > 0:
     print_aligned([
       ("Speedup (brute/WAND)", total_time_bm25 / total_time_bm25_wand),
+    ])
+  if lsi_ready and total_time_lsi > 0:
+    print_aligned([
+      ("Speedup (BM25/LSI)", total_time_bm25 / total_time_lsi),
+      ("Speedup (WAND/LSI)", total_time_bm25_wand / total_time_lsi),
     ])
 
 if __name__ == '__main__':
@@ -213,6 +264,11 @@ if __name__ == '__main__':
     action="store_true",
     help="Use Patricia tree for query term lookup during retrieval",
   )
+  parser.add_argument(
+    "--lsi-output-dir",
+    default="lsi_index",
+    help="Directory containing LSI+FAISS artifacts (set empty to disable)",
+  )
   args = parser.parse_args()
 
   qrels = load_qrels(qrel_file=args.qrels)
@@ -220,4 +276,11 @@ if __name__ == '__main__':
   assert qrels["Q1"][166] == 1, "qrels is incorrect"
   assert qrels["Q1"][300] == 0, "qrels is incorrect"
 
-  eval(qrels, query_file=args.queries, k=args.k, use_patricia=args.use_patricia)
+  lsi_output_dir = args.lsi_output_dir.strip() or None
+  eval(
+    qrels,
+    query_file=args.queries,
+    k=args.k,
+    use_patricia=args.use_patricia,
+    lsi_output_dir=lsi_output_dir,
+  )

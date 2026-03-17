@@ -76,7 +76,11 @@ SPIMI (Single-Pass In-Memory Indexing)
 - More memory-efficient for varying document sizes
 - Merges all flushed blocks at the end
 
-### 6.  Patricia Tree
+### 6. Adding Patricia Tree
+
+```
+python .\evaluation.py --use-patricia
+```
 
 Patricia Tree visualizations:
 - Normal
@@ -85,3 +89,22 @@ Patricia Tree visualizations:
 ![alt text](img/patricia-tree-mindmap.png)
 - Folders
 ![alt text](img/patricia-tree-folder.png)
+
+### 7. Adding LSI + FAISS (Vector Indexing)
+
+Build latent semantic index (LSI) and FAISS vector index:
+```
+python lsi_faiss.py build --collection collection --output-dir lsi_index --n-components 256 --index-type ivf
+```
+
+Query the LSI+FAISS index:
+```
+python lsi_faiss.py query --output-dir lsi_index --text "lipid metabolism in pregnancy" --topk 10
+```
+
+Efficient SVD strategy for very large term-document matrices:
+- Use sparse TF-IDF matrix (do not densify term-document matrix).
+- Use randomized truncated SVD (not full SVD), with cost close to linear in non-zero entries.
+- Keep latent dimension moderate (e.g., 128-512).
+- Use FAISS approximate indexes (IVF or HNSW) for scalable top-k retrieval.
+- For IVF, train on a sampled subset of vectors when corpus is very large.
