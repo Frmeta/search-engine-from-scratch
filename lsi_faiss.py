@@ -198,7 +198,8 @@ def build_parser():
     parser = argparse.ArgumentParser(
         description="LSI retrieval with sparse TF-IDF + randomized SVD + FAISS"
     )
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=False)
+    parser.set_defaults(command="build")
 
     p_build = sub.add_parser("build", help="Build LSI + FAISS document index")
     p_build.add_argument("--collection", default="collection", help="Collection root directory")
@@ -232,7 +233,27 @@ def build_parser():
 def main():
     args = build_parser().parse_args()
 
+    # Provide defaults for build subcommand when not explicitly invoked
     if args.command == "build":
+        if not hasattr(args, "collection"):
+            args.collection = "collection"
+        if not hasattr(args, "output_dir"):
+            args.output_dir = "lsi_index"
+        if not hasattr(args, "n_components"):
+            args.n_components = 256
+        if not hasattr(args, "min_df"):
+            args.min_df = 2
+        if not hasattr(args, "max_df"):
+            args.max_df = 0.9
+        if not hasattr(args, "index_type"):
+            args.index_type = "ivf"
+        if not hasattr(args, "nlist"):
+            args.nlist = 256
+        if not hasattr(args, "hnsw_m"):
+            args.hnsw_m = 32
+        if not hasattr(args, "ef_construction"):
+            args.ef_construction = 200
+
         meta = build_lsi(
             collection_dir=args.collection,
             output_dir=args.output_dir,

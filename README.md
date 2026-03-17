@@ -12,6 +12,16 @@ Run evaluation with Patricia term lookup enabled:
 python evaluation.py --k 10 --use-patricia
 ```
 
+Run evaluation with adaptive retrieval comparison:
+```
+python evaluation.py --k 10 --use-adaptive-retrieval --adaptive-index-dir pt_index
+```
+
+Run search with adaptive retrieval:
+```
+python search.py --adaptive-retrieval --adaptive-index-dir pt_index
+```
+
 
 
 ### 1. Adding Elias-Gamma Compression

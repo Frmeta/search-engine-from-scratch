@@ -7,3 +7,6 @@ tmp/*
 !tmp/.gitkeep
 
 lsi_index/
+
+pt_index/*
+!pt_index/.gitkeep

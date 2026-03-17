@@ -8,6 +8,7 @@ import numpy as np
 from bsbi import BSBIIndex
 from compression import VBEPostingsEliasGammaTF
 from lsi_faiss import load_lsi
+from adaptive_retrieval import AdaptiveRetriever
 from sklearn.preprocessing import normalize
 from tqdm import tqdm
 
@@ -101,7 +102,15 @@ def extract_doc_id(doc_path):
     raise ValueError(f"Cannot parse doc id from path: {doc_path}")
   return int(match.group(1))
 
-def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False, lsi_output_dir = None):
+def eval(
+  qrels,
+  query_file = "queries.txt",
+  k = 1000,
+  use_patricia = False,
+  lsi_output_dir = None,
+  use_adaptive_retrieval = False,
+  adaptive_index_dir = "pt_index",
+):
   """ 
     Iterate over all 30 queries and compute mean RBP for
     both TF-IDF and BM25 over top-k retrieved documents.
@@ -132,13 +141,26 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False, lsi_
     ndcg_scores_lsi = []
     ap_scores_lsi = []
 
+    rbp_scores_adaptive = []
+    dcg_scores_adaptive = []
+    ndcg_scores_adaptive = []
+    ap_scores_adaptive = []
+
     total_time_bm25 = 0.0
     total_time_bm25_wand = 0.0
     total_time_lsi = 0.0
+    total_time_adaptive = 0.0
 
     lsi_ready = lsi_output_dir is not None and Path(lsi_output_dir).exists()
     if lsi_ready:
       lsi_index, lsi_vectorizer, lsi_svd, lsi_meta = load_lsi(lsi_output_dir)
+
+    adaptive_retriever = None
+    if use_adaptive_retrieval:
+      adaptive_retriever = AdaptiveRetriever(
+        collection_dir="collection",
+        index_dir=adaptive_index_dir,
+      )
 
     for qline in tqdm(query_lines, desc="Evaluating queries"):
       parts = qline.strip().split()
@@ -198,6 +220,20 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False, lsi_
           ndcg_scores_lsi.append(ndcg(ranking_lsi))
           ap_scores_lsi.append(ap(ranking_lsi))
 
+      if adaptive_retriever is not None:
+        ranking_adaptive = []
+        start_adaptive = time.perf_counter()
+        results_adaptive = adaptive_retriever.retrieve(query, k=k)
+        total_time_adaptive += (time.perf_counter() - start_adaptive)
+
+        for (_, doc) in results_adaptive:
+          did = extract_doc_id(doc)
+          ranking_adaptive.append(qrels[qid][did])
+          rbp_scores_adaptive.append(rbp(ranking_adaptive))
+          dcg_scores_adaptive.append(dcg(ranking_adaptive))
+          ndcg_scores_adaptive.append(ndcg(ranking_adaptive))
+          ap_scores_adaptive.append(ap(ranking_adaptive))
+
   def fmt_num(value):
     # Keep output concise with up to 4 decimals while avoiding trailing zeros.
     text = f"{value:.4f}"
@@ -230,6 +266,13 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False, lsi_
       ("LSI+FAISS NDCG", sum(ndcg_scores_lsi) / len(ndcg_scores_lsi)),
       ("LSI+FAISS AP", sum(ap_scores_lsi) / len(ap_scores_lsi)),
     ])
+  if adaptive_retriever is not None and rbp_scores_adaptive:
+    print_aligned([
+      ("Adaptive Retrieval RBP", sum(rbp_scores_adaptive) / len(rbp_scores_adaptive)),
+      ("Adaptive Retrieval DCG", sum(dcg_scores_adaptive) / len(dcg_scores_adaptive)),
+      ("Adaptive Retrieval NDCG", sum(ndcg_scores_adaptive) / len(ndcg_scores_adaptive)),
+      ("Adaptive Retrieval AP", sum(ap_scores_adaptive) / len(ap_scores_adaptive)),
+    ])
 
   n_queries = len(query_lines)
   print("\nRetrieval time comparison (30 queries)")
@@ -244,6 +287,11 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False, lsi_
       ("LSI+FAISS total (s)", total_time_lsi),
       ("LSI+FAISS avg/query (s)", total_time_lsi / n_queries),
     ])
+  if adaptive_retriever is not None:
+    print_aligned([
+      ("Adaptive Retrieval total (s)", total_time_adaptive),
+      ("Adaptive Retrieval avg/query (s)", total_time_adaptive / n_queries),
+    ])
   if total_time_bm25_wand > 0:
     print_aligned([
       ("Speedup (brute/WAND)", total_time_bm25 / total_time_bm25_wand),
@@ -252,6 +300,11 @@ def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False, lsi_
     print_aligned([
       ("Speedup (BM25/LSI)", total_time_bm25 / total_time_lsi),
       ("Speedup (WAND/LSI)", total_time_bm25_wand / total_time_lsi),
+    ])
+  if adaptive_retriever is not None and total_time_adaptive > 0:
+    print_aligned([
+      ("Speedup (BM25/Adaptive)", total_time_bm25 / total_time_adaptive),
+      ("Speedup (WAND/Adaptive)", total_time_bm25_wand / total_time_adaptive),
     ])
 
 if __name__ == '__main__':
@@ -269,6 +322,16 @@ if __name__ == '__main__':
     default="lsi_index",
     help="Directory containing LSI+FAISS artifacts (set empty to disable)",
   )
+  parser.add_argument(
+    "--use-adaptive-retrieval",
+    action="store_true",
+    help="Evaluate adaptive retrieval pipeline",
+  )
+  parser.add_argument(
+    "--adaptive-index-dir",
+    default="pt_index",
+    help="Directory containing adaptive retrieval index artifacts",
+  )
   args = parser.parse_args()
 
   qrels = load_qrels(qrel_file=args.qrels)
@@ -283,4 +346,6 @@ if __name__ == '__main__':
     k=args.k,
     use_patricia=args.use_patricia,
     lsi_output_dir=lsi_output_dir,
+    use_adaptive_retrieval=args.use_adaptive_retrieval,
+    adaptive_index_dir=args.adaptive_index_dir,
   )
