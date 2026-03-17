@@ -60,6 +60,88 @@ class IdMap:
         else:
             raise TypeError
 
+
+class PatriciaNode:
+    """Compressed trie node (Patricia/radix trie)."""
+
+    def __init__(self):
+        self.children = {}
+        self.value = None
+
+
+class PatriciaTree:
+    """Patricia tree for exact term lookup."""
+
+    def __init__(self):
+        self.root = PatriciaNode()
+
+    def insert(self, key, value):
+        node = self.root
+        remaining = key
+
+        while True:
+            for edge_label in list(node.children.keys()):
+                common_len = self._common_prefix_len(remaining, edge_label)
+                if common_len == 0:
+                    continue
+
+                # Edge fully matches; descend.
+                if common_len == len(edge_label):
+                    node = node.children[edge_label]
+                    remaining = remaining[common_len:]
+                    if not remaining:
+                        node.value = value
+                        return
+                    break
+
+                # Split edge to preserve compression.
+                child = node.children.pop(edge_label)
+                prefix = edge_label[:common_len]
+                suffix = edge_label[common_len:]
+
+                split_node = PatriciaNode()
+                split_node.children[suffix] = child
+                node.children[prefix] = split_node
+
+                node = split_node
+                remaining = remaining[common_len:]
+                if not remaining:
+                    node.value = value
+                    return
+                break
+            else:
+                leaf = PatriciaNode()
+                leaf.value = value
+                node.children[remaining] = leaf
+                return
+
+    def search(self, key):
+        node = self.root
+        remaining = key
+
+        while True:
+            if remaining == "":
+                return node.value
+
+            matched = False
+            for edge_label, child in node.children.items():
+                if remaining.startswith(edge_label):
+                    remaining = remaining[len(edge_label):]
+                    node = child
+                    matched = True
+                    break
+
+            if not matched:
+                return None
+
+    @staticmethod
+    def _common_prefix_len(a, b):
+        i = 0
+        max_i = min(len(a), len(b))
+        while i < max_i and a[i] == b[i]:
+            i += 1
+        return i
+
 def sorted_merge_posts_and_tfs(posts_tfs1, posts_tfs2):
     """
     Merge two sorted lists of tuples (doc_id, tf) and return

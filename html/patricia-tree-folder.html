@@ -1,0 +1,553 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Patricia Tree — Folder View</title>
+	<style>
+		:root {
+			--bg: #f3efe7;
+			--paper: #fffdf8;
+			--ink: #1f2937;
+			--muted: #6b7280;
+			--border: #e5e7eb;
+			--hover: #f0fdf4;
+			--folder-open: #d97706;
+			--folder-closed: #92400e;
+			--terminal-color: #166534;
+			--root-color: #7c3aed;
+			--badge-bg: #e0e7ff;
+			--badge-ink: #3730a3;
+		}
+
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+
+		body {
+			font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+			color: var(--ink);
+			background:
+				radial-gradient(1300px 450px at -10% -20%, #d1fae5 20%, transparent 60%),
+				radial-gradient(1200px 420px at 110% 0%, #bfdbfe 18%, transparent 62%),
+				var(--bg);
+			min-height: 100vh;
+		}
+
+		.wrap { max-width: 900px; margin: 28px auto; padding: 0 16px 48px; }
+
+		.panel {
+			background: var(--paper);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			box-shadow: 0 14px 40px rgba(0,0,0,.13);
+			overflow: hidden;
+		}
+
+		/* ── Toolbar ── */
+		.toolbar {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 10px;
+			align-items: center;
+			padding: 14px 16px;
+			border-bottom: 1px solid var(--border);
+			background: linear-gradient(180deg, #fff, #f8fafc);
+		}
+
+		.toolbar-title { flex: 1; }
+		.title { font-size: 1.05rem; font-weight: 700; }
+		.meta { margin-top: 3px; font-size: 0.82rem; color: var(--muted); font-family: Consolas, monospace; }
+
+		button, .file-btn {
+			border: 1px solid #d1d5db;
+			background: #fff;
+			color: var(--ink);
+			border-radius: 10px;
+			padding: 7px 12px;
+			font-size: 0.88rem;
+			cursor: pointer;
+			white-space: nowrap;
+			transition: all 130ms;
+		}
+		button:hover, .file-btn:hover { border-color: #9ca3af; transform: translateY(-1px); }
+		.primary { background: #ecfdf5; color: #14532d; border-color: #86efac; font-weight: 600; }
+		.file-btn input { display: none; }
+
+		.search-wrap {
+			display: flex;
+			align-items: center;
+			gap: 6px;
+			background: #f9fafb;
+			border: 1px solid #d1d5db;
+			border-radius: 10px;
+			padding: 5px 10px;
+		}
+		.search-wrap input {
+			border: none;
+			background: transparent;
+			outline: none;
+			font-size: 0.88rem;
+			color: var(--ink);
+			width: 160px;
+		}
+		.search-wrap svg { color: var(--muted); flex-shrink: 0; }
+
+		/* ── Hint ── */
+		.hint {
+			padding: 10px 16px;
+			background: #fff7ed;
+			border-bottom: 1px solid #fed7aa;
+			color: #9a3412;
+			font-size: 0.88rem;
+			display: none;
+		}
+
+		/* ── Tree area ── */
+		.tree-area {
+			padding: 16px 20px;
+			overflow-y: auto;
+			max-height: 78vh;
+			font-size: 0.9rem;
+		}
+
+		/* ── Tree node ── */
+		.tree-node { list-style: none; }
+
+		.node-row {
+			display: flex;
+			align-items: center;
+			gap: 5px;
+			padding: 3px 6px;
+			border-radius: 7px;
+			cursor: pointer;
+			user-select: none;
+			transition: background 100ms;
+			white-space: nowrap;
+		}
+		.node-row:hover { background: var(--hover); }
+
+		/* caret */
+		.caret {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 16px;
+			height: 16px;
+			flex-shrink: 0;
+			color: var(--muted);
+			transition: transform 180ms;
+		}
+		.caret.open { transform: rotate(90deg); }
+		.caret-placeholder { width: 16px; flex-shrink: 0; }
+
+		/* icon */
+		.icon { font-size: 1.05rem; flex-shrink: 0; line-height: 1; }
+
+		/* label */
+		.node-label {
+			font-family: Consolas, "Courier New", monospace;
+			font-size: 0.88rem;
+			color: var(--ink);
+			flex: 1;
+			min-width: 0;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+		.node-label.root-label { color: var(--root-color); font-weight: 700; }
+		.node-label.terminal-label { color: var(--terminal-color); font-weight: 600; }
+
+		/* badge: number of subfolders */
+		.badge {
+			display: inline-flex;
+			align-items: center;
+			background: var(--badge-bg);
+			color: var(--badge-ink);
+			border-radius: 99px;
+			padding: 1px 8px;
+			font-size: 0.76rem;
+			font-weight: 600;
+			flex-shrink: 0;
+		}
+		.badge.leaf-badge { background: #dcfce7; color: #14532d; }
+
+		/* highlight match */
+		mark {
+			background: #fef08a;
+			color: inherit;
+			border-radius: 2px;
+			padding: 0 1px;
+		}
+
+		/* child list */
+		.children {
+			margin-left: 22px;
+			border-left: 1.5px solid #e5e7eb;
+			padding-left: 8px;
+		}
+		.children.collapsed { display: none; }
+
+		/* empty state */
+		.empty { padding: 48px 20px; text-align: center; color: var(--muted); font-size: 0.95rem; }
+
+		/* footer */
+		.footer {
+			padding: 8px 16px 12px;
+			border-top: 1px solid var(--border);
+			display: flex;
+			gap: 20px;
+			font-size: 0.82rem;
+			color: var(--muted);
+		}
+		.legend-item { display: flex; align-items: center; gap: 6px; }
+		.dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+	</style>
+</head>
+<body>
+<main class="wrap">
+	<section class="panel">
+
+		<div class="toolbar">
+			<div class="toolbar-title">
+				<div class="title">Patricia Tree — Folder View</div>
+				<div class="meta" id="stats">No data loaded.</div>
+			</div>
+			<div class="search-wrap">
+				<svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+					<circle cx="9" cy="9" r="6"/><line x1="13.5" y1="13.5" x2="18" y2="18"/>
+				</svg>
+				<input id="searchInput" type="search" placeholder="Search terms…" />
+			</div>
+			<button id="expandAll">Expand All</button>
+			<button id="collapseAll">Collapse All</button>
+			<button id="loadDefault" class="primary">Load patricia_tree.json</button>
+			<label class="file-btn" for="jsonFile">Open JSON<input id="jsonFile" type="file" accept="application/json,.json" /></label>
+		</div>
+
+		<div class="hint" id="hint"></div>
+
+		<div class="tree-area" id="treeArea">
+			<div class="empty">Click <strong>Load patricia_tree.json</strong> or open a JSON file to begin.</div>
+		</div>
+
+		<div class="footer">
+			<span class="legend-item"><span class="dot" style="background:#7c3aed"></span>Root</span>
+			<span class="legend-item"><span class="dot" style="background:#d97706"></span>Internal node (expandable)</span>
+			<span class="legend-item"><span class="dot" style="background:#166534"></span>Terminal node (word)</span>
+		</div>
+	</section>
+</main>
+
+<script>
+	const treeArea = document.getElementById("treeArea");
+	const stats = document.getElementById("stats");
+	const hint = document.getElementById("hint");
+	const searchInput = document.getElementById("searchInput");
+
+	let latestData = null;
+	let currentSearch = "";
+
+	function showHint(msg) { hint.textContent = msg; hint.style.display = "block"; }
+	function clearHint() { hint.style.display = "none"; hint.textContent = ""; }
+
+	// ── Build adjacency from flat JSON ──────────────────────────────────────────
+	function buildTree(data) {
+		const children = new Map();
+		const parent = new Map();
+		const edgeLabel = new Map(); // nodeId -> edge label from parent
+
+		for (const n of data.nodes) children.set(n.id, []);
+		for (const e of data.edges) {
+			if (children.has(e.source)) {
+				children.get(e.source).push(e.target);
+				parent.set(e.target, e.source);
+				edgeLabel.set(e.target, e.label);
+			}
+		}
+
+		// Count direct children and total terminal descendants per node
+		const totalTerminals = new Map();
+		const totalDescendants = new Map();
+
+		function computeCounts(u) {
+			const kids = children.get(u) || [];
+			if (!kids.length) {
+				totalTerminals.set(u, 1);
+				totalDescendants.set(u, 0);
+				return;
+			}
+			let terms = 0, descs = 0;
+			for (const v of kids) {
+				computeCounts(v);
+				terms += totalTerminals.get(v);
+				descs += 1 + totalDescendants.get(v);
+			}
+			totalTerminals.set(u, terms);
+			totalDescendants.set(u, descs);
+		}
+		computeCounts(data.root);
+
+		// Build full word for terminal nodes by walking up
+		const wordCache = new Map();
+		function getWord(nodeId) {
+			if (wordCache.has(nodeId)) return wordCache.get(nodeId);
+			const parts = [];
+			let cur = nodeId;
+			while (parent.has(cur)) {
+				const p = parent.get(cur);
+				parts.push(String(edgeLabel.get(cur) || ""));
+				cur = p;
+			}
+			parts.reverse();
+			const word = parts.join("");
+			wordCache.set(nodeId, word);
+			return word;
+		}
+
+		return { children, edgeLabel, totalTerminals, totalDescendants, getWord };
+	}
+
+	// ── Render ──────────────────────────────────────────────────────────────────
+	function highlight(text, query) {
+		if (!query) return document.createTextNode(text);
+		const idx = text.toLowerCase().indexOf(query.toLowerCase());
+		if (idx < 0) return document.createTextNode(text);
+		const span = document.createDocumentFragment();
+		span.appendChild(document.createTextNode(text.slice(0, idx)));
+		const mark = document.createElement("mark");
+		mark.textContent = text.slice(idx, idx + query.length);
+		span.appendChild(mark);
+		span.appendChild(document.createTextNode(text.slice(idx + query.length)));
+		return span;
+	}
+
+	// Returns true if the subtree rooted at nodeId contains a term matching query
+	function subtreeMatchesSearch(nodeId, query, data, tree) {
+		if (!query) return true;
+		const kids = tree.children.get(nodeId) || [];
+		const nodeData = data.nodes.find(n => n.id === nodeId);
+		if (nodeData && nodeData.is_terminal) {
+			const word = tree.getWord(nodeId);
+			if (word.toLowerCase().includes(query.toLowerCase())) return true;
+		}
+		// Also check edge label of this node
+		const lbl = tree.edgeLabel.get(nodeId) || "";
+		if (lbl.toLowerCase().includes(query.toLowerCase())) return true;
+		for (const v of kids) {
+			if (subtreeMatchesSearch(v, query, data, tree)) return true;
+		}
+		return false;
+	}
+
+	function buildNodeEl(nodeId, data, tree, query, isRoot) {
+		const nodeData = data.nodes.find(n => n.id === nodeId);
+		const kids = tree.children.get(nodeId) || [];
+		const isTerminal = nodeData && nodeData.is_terminal;
+		const hasChildren = kids.length > 0;
+		const label = isRoot ? "root" : (tree.edgeLabel.get(nodeId) || "");
+		const childCount = kids.length;
+		const termCount = tree.totalTerminals.get(nodeId) || 0;
+
+		// Filter by search
+		if (query && !isRoot && !subtreeMatchesSearch(nodeId, query, data, tree)) return null;
+
+		const li = document.createElement("li");
+		li.className = "tree-node";
+
+		const row = document.createElement("div");
+		row.className = "node-row";
+
+		// Caret or placeholder
+		if (hasChildren) {
+			const caret = document.createElement("span");
+			caret.className = "caret";
+			caret.innerHTML = `<svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,1 8,5 2,9"/></svg>`;
+			row.appendChild(caret);
+		} else {
+			const ph = document.createElement("span");
+			ph.className = "caret-placeholder";
+			row.appendChild(ph);
+		}
+
+		// Icon
+		const icon = document.createElement("span");
+		icon.className = "icon";
+		if (isRoot) icon.textContent = "🌳";
+		else if (isTerminal && !hasChildren) icon.textContent = "📄";
+		else if (isTerminal) icon.textContent = "📂";
+		else icon.textContent = hasChildren ? "📁" : "📄";
+		row.appendChild(icon);
+
+		// Label
+		const labelEl = document.createElement("span");
+		labelEl.className = "node-label" + (isRoot ? " root-label" : isTerminal ? " terminal-label" : "");
+		if (isTerminal && !isRoot) {
+			// Show full word for terminals
+			const word = tree.getWord(nodeId);
+			const display = word || label;
+			labelEl.appendChild(highlight(display, query));
+		} else {
+			labelEl.appendChild(highlight(label, query));
+		}
+		row.appendChild(labelEl);
+
+		// Badge: direct children count
+		if (hasChildren) {
+			const badge = document.createElement("span");
+			badge.className = "badge";
+			badge.textContent = `${childCount} subfolder${childCount !== 1 ? "s" : ""}`;
+			row.appendChild(badge);
+
+			// Secondary badge: total terminal (word) count
+			if (termCount > 0) {
+				const tbadge = document.createElement("span");
+				tbadge.className = "badge leaf-badge";
+				tbadge.textContent = `${termCount} word${termCount !== 1 ? "s" : ""}`;
+				row.appendChild(tbadge);
+			}
+		}
+
+		li.appendChild(row);
+
+		// Children list
+		if (hasChildren) {
+			const ul = document.createElement("ul");
+			ul.className = "children" + (query ? "" : " collapsed");
+
+			let renderedAny = false;
+			for (const v of kids) {
+				const child = buildNodeEl(v, data, tree, query, false);
+				if (child) { ul.appendChild(child); renderedAny = true; }
+			}
+
+			if (!renderedAny) return null;
+
+			li.appendChild(ul);
+
+			// Toggle behaviour
+			const caretEl = row.querySelector(".caret");
+			const openByDefault = !!query;
+			if (openByDefault) {
+				caretEl && caretEl.classList.add("open");
+				icon.textContent = isTerminal ? "📂" : "📂";
+			}
+
+			row.addEventListener("click", () => {
+				const collapsed = ul.classList.toggle("collapsed");
+				caretEl && caretEl.classList.toggle("open", !collapsed);
+				if (!isRoot) {
+					icon.textContent = collapsed
+						? (isTerminal ? "📁" : "📁")
+						: (isTerminal ? "📂" : "📂");
+				}
+			});
+		}
+
+		return li;
+	}
+
+	function renderTree(data) {
+		if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+			throw new Error("Invalid JSON: expected nodes[] and edges[].");
+		}
+		latestData = data;
+		const tree = buildTree(data);
+		renderWithSearch(data, tree, currentSearch);
+		const meta = data.metadata || {};
+		stats.textContent = `nodes=${data.nodes.length} edges=${data.edges.length} vocab=${meta.vocabulary_size ?? "-"}`;
+	}
+
+	function renderWithSearch(data, tree, query) {
+		treeArea.innerHTML = "";
+		const ul = document.createElement("ul");
+		ul.style.paddingLeft = "0";
+		ul.style.listStyle = "none";
+		const rootEl = buildNodeEl(data.root, data, tree, query, true);
+		if (rootEl) {
+			// Always expand root
+			const rootUl = rootEl.querySelector("ul.children");
+			const rootCaret = rootEl.querySelector(".caret");
+			if (rootUl) {
+				rootUl.classList.remove("collapsed");
+				rootCaret && rootCaret.classList.add("open");
+			}
+			ul.appendChild(rootEl);
+		}
+		treeArea.appendChild(ul);
+	}
+
+	let searchTree = null;
+
+	function applySearch(query) {
+		currentSearch = query;
+		if (!latestData) return;
+		if (!searchTree) searchTree = buildTree(latestData);
+		renderWithSearch(latestData, searchTree, query);
+	}
+
+	// Expand / collapse all
+	document.getElementById("expandAll").addEventListener("click", () => {
+		treeArea.querySelectorAll("ul.children").forEach(ul => {
+			ul.classList.remove("collapsed");
+		});
+		treeArea.querySelectorAll(".caret").forEach(c => c.classList.add("open"));
+		treeArea.querySelectorAll(".icon").forEach(ic => {
+			if (ic.textContent === "📁") ic.textContent = "📂";
+		});
+	});
+
+	document.getElementById("collapseAll").addEventListener("click", () => {
+		// Collapse all except root's direct children list
+		const allUls = Array.from(treeArea.querySelectorAll("ul.children"));
+		// Keep root open, collapse everything else
+		allUls.slice(1).forEach(ul => ul.classList.add("collapsed"));
+		treeArea.querySelectorAll(".caret").forEach((c, i) => {
+			if (i > 0) c.classList.remove("open");
+		});
+		treeArea.querySelectorAll(".icon").forEach(ic => {
+			if (ic.textContent === "📂") ic.textContent = "📁";
+		});
+		// Keep root icon
+		const rootIcon = treeArea.querySelector(".icon");
+		if (rootIcon) rootIcon.textContent = "🌳";
+	});
+
+	// Search
+	let searchTimeout = null;
+	searchInput.addEventListener("input", () => {
+		clearTimeout(searchTimeout);
+		searchTimeout = setTimeout(() => applySearch(searchInput.value.trim()), 250);
+	});
+
+	// Load default
+	async function loadDefault() {
+		try {
+			clearHint();
+			const res = await fetch("../index/patricia_tree.json", { cache: "no-store" });
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const json = await res.json();
+			searchTree = null;
+			renderTree(json);
+		} catch (err) {
+			showHint("Could not fetch ../index/patricia_tree.json. Use a local server (python -m http.server) or open the JSON manually.");
+		}
+	}
+
+	document.getElementById("loadDefault").addEventListener("click", loadDefault);
+
+	document.getElementById("jsonFile").addEventListener("change", async (e) => {
+		const file = e.target.files && e.target.files[0];
+		if (!file) return;
+		try {
+			clearHint();
+			const text = await file.text();
+			const json = JSON.parse(text);
+			searchTree = null;
+			renderTree(json);
+		} catch (err) {
+			showHint("Failed to parse JSON file.");
+		}
+	});
+
+	loadDefault();
+</script>
+</body>
+</html>

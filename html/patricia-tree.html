@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Patricia Tree Visualizer</title>
+	<style>
+		:root {
+			--bg: #f3efe7;
+			--paper: #fffdf8;
+			--ink: #1f2937;
+			--muted: #6b7280;
+			--accent: #14532d;
+			--edge: #9ca3af;
+			--terminal: #166534;
+			--nonterminal: #1d4ed8;
+			--panel-shadow: 0 14px 40px rgba(0, 0, 0, 0.14);
+		}
+
+		* {
+			box-sizing: border-box;
+		}
+
+		body {
+			margin: 0;
+			font-family: "Segoe UI", "Trebuchet MS", sans-serif;
+			color: var(--ink);
+			background:
+				radial-gradient(1300px 450px at -10% -20%, #d1fae5 20%, transparent 60%),
+				radial-gradient(1200px 420px at 110% 0%, #bfdbfe 18%, transparent 62%),
+				var(--bg);
+			min-height: 100vh;
+		}
+
+		.wrap {
+			max-width: 1300px;
+			margin: 24px auto;
+			padding: 0 16px;
+		}
+
+		.panel {
+			background: var(--paper);
+			border: 1px solid #e5e7eb;
+			border-radius: 16px;
+			box-shadow: var(--panel-shadow);
+			overflow: hidden;
+		}
+
+		.toolbar {
+			display: grid;
+			grid-template-columns: 1fr auto auto auto;
+			gap: 10px;
+			align-items: center;
+			padding: 14px;
+			border-bottom: 1px solid #e5e7eb;
+			background: linear-gradient(180deg, #ffffff, #f8fafc);
+		}
+
+		.title {
+			font-size: 1.05rem;
+			font-weight: 700;
+			letter-spacing: 0.2px;
+		}
+
+		.meta {
+			margin-top: 3px;
+			font-size: 0.85rem;
+			color: var(--muted);
+			font-family: Consolas, "Courier New", monospace;
+		}
+
+		button,
+		.file-btn {
+			border: 1px solid #d1d5db;
+			background: #ffffff;
+			color: var(--ink);
+			border-radius: 10px;
+			padding: 8px 12px;
+			font-size: 0.9rem;
+			cursor: pointer;
+			transition: all 140ms ease;
+		}
+
+		button:hover,
+		.file-btn:hover {
+			border-color: #9ca3af;
+			transform: translateY(-1px);
+		}
+
+		.primary {
+			background: #ecfdf5;
+			color: #14532d;
+			border-color: #86efac;
+			font-weight: 600;
+		}
+
+		.file-btn input {
+			display: none;
+		}
+
+		.hint {
+			padding: 10px 14px;
+			background: #fff7ed;
+			border-bottom: 1px solid #fed7aa;
+			color: #9a3412;
+			font-size: 0.9rem;
+			display: none;
+		}
+
+		#viewport {
+			width: 100%;
+			height: 74vh;
+			display: block;
+			background:
+				linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px) 0 0 / 32px 32px,
+				linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px) 0 0 / 32px 32px,
+				#ffffff;
+			cursor: grab;
+			user-select: none;
+		}
+
+		#viewport:active {
+			cursor: grabbing;
+		}
+
+		.legend {
+			display: flex;
+			gap: 14px;
+			align-items: center;
+			padding: 8px 14px 14px;
+			color: var(--muted);
+			font-size: 0.86rem;
+		}
+
+		.dot {
+			width: 11px;
+			height: 11px;
+			border-radius: 50%;
+			display: inline-block;
+			margin-right: 6px;
+			vertical-align: middle;
+		}
+	</style>
+</head>
+<body>
+	<main class="wrap">
+		<section class="panel">
+			<div class="toolbar">
+				<div>
+					<div class="title">Patricia Tree Graph</div>
+					<div class="meta" id="stats">No data loaded.</div>
+				</div>
+				<button id="loadDefault" class="primary">Load index/patricia_tree.json</button>
+				<label class="file-btn" for="jsonFile">Open JSON<input id="jsonFile" type="file" accept="application/json,.json" /></label>
+				<label class="file-btn" for="showEdgeLabels">Edge Labels<input id="showEdgeLabels" type="checkbox" checked /></label>
+				<button id="resetView">Reset View</button>
+			</div>
+
+			<div class="hint" id="hint"></div>
+
+			<svg id="viewport" viewBox="0 0 1400 900" aria-label="Patricia tree graph">
+				<g id="graphRoot"></g>
+			</svg>
+
+			<div class="legend">
+				<span><span class="dot" style="background:#166534"></span>Terminal node</span>
+				<span><span class="dot" style="background:#1d4ed8"></span>Non-terminal node</span>
+				<span>Mouse wheel: zoom</span>
+				<span>Drag: pan</span>
+			</div>
+		</section>
+	</main>
+
+	<script>
+		const svg = document.getElementById("viewport");
+		const graphRoot = document.getElementById("graphRoot");
+		const stats = document.getElementById("stats");
+		const hint = document.getElementById("hint");
+		const showEdgeLabelsCheckbox = document.getElementById("showEdgeLabels");
+
+		let latestData = null;
+
+		const state = {
+			tx: 60,
+			ty: 70,
+			scale: 1,
+			dragging: false,
+			lastX: 0,
+			lastY: 0,
+		};
+
+		function showHint(msg) {
+			hint.textContent = msg;
+			hint.style.display = "block";
+		}
+
+		function clearHint() {
+			hint.style.display = "none";
+			hint.textContent = "";
+		}
+
+		function applyTransform() {
+			graphRoot.setAttribute("transform", `translate(${state.tx} ${state.ty}) scale(${state.scale})`);
+		}
+
+		function resetView() {
+			state.tx = 60;
+			state.ty = 70;
+			state.scale = 1;
+			applyTransform();
+		}
+
+		function buildLayout(data) {
+			const children = new Map();
+			const parent = new Map();
+
+			for (const n of data.nodes) {
+				children.set(n.id, []);
+			}
+			for (const e of data.edges) {
+				if (children.has(e.source)) {
+					children.get(e.source).push(e.target);
+					parent.set(e.target, e.source);
+				}
+			}
+
+			const root = data.root;
+			const depth = new Map([[root, 0]]);
+			const queue = [root];
+
+			while (queue.length) {
+				const u = queue.shift();
+				const d = depth.get(u);
+				for (const v of children.get(u) || []) {
+					depth.set(v, d + 1);
+					queue.push(v);
+				}
+			}
+
+			const edgeByPair = new Map();
+			for (const e of data.edges) {
+				edgeByPair.set(`${e.source}->${e.target}`, e.label);
+			}
+
+			const xPos = new Map();
+			const yPos = new Map();
+			const rowGap = 70;
+			const levelGap = 180;
+			let rowIndex = 0;
+
+			function dfsAssign(u) {
+				const kids = children.get(u) || [];
+				if (!kids.length) {
+					yPos.set(u, rowIndex * rowGap);
+					rowIndex += 1;
+				} else {
+					for (const v of kids) dfsAssign(v);
+					const minY = Math.min(...kids.map((v) => yPos.get(v)));
+					const maxY = Math.max(...kids.map((v) => yPos.get(v)));
+					yPos.set(u, (minY + maxY) / 2);
+				}
+				xPos.set(u, (depth.get(u) || 0) * levelGap);
+			}
+
+			dfsAssign(root);
+			return { xPos, yPos, edgeByPair, parent };
+		}
+
+		function renderGraph(data) {
+			if (!data || !Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+				throw new Error("Invalid JSON format: expected nodes[] and edges[].");
+			}
+
+			graphRoot.innerHTML = "";
+			clearHint();
+
+			latestData = data;
+			const { xPos, yPos, edgeByPair, parent } = buildLayout(data);
+			const autoHideLabels = data.edges.length > 1800;
+			const shouldRenderEdgeLabels = showEdgeLabelsCheckbox.checked || !autoHideLabels;
+
+			if (autoHideLabels && !showEdgeLabelsCheckbox.checked) {
+				showHint("Edge labels are auto-hidden for performance on large graphs. Enable the Edge Labels toggle to force render.");
+			}
+
+			const wordCache = new Map();
+			function mergedWordForNode(nodeId) {
+				if (wordCache.has(nodeId)) return wordCache.get(nodeId);
+
+				const parts = [];
+				let cur = nodeId;
+				while (cur !== data.root && parent.has(cur)) {
+					const p = parent.get(cur);
+					parts.push(String(edgeByPair.get(`${p}->${cur}`) || ""));
+					cur = p;
+				}
+				parts.reverse();
+				const word = parts.join("");
+				wordCache.set(nodeId, word);
+				return word;
+			}
+
+			const edgeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+			const nodeLayer = document.createElementNS("http://www.w3.org/2000/svg", "g");
+			graphRoot.appendChild(edgeLayer);
+			graphRoot.appendChild(nodeLayer);
+
+			for (const e of data.edges) {
+				const sx = xPos.get(e.source);
+				const sy = yPos.get(e.source);
+				const tx = xPos.get(e.target);
+				const ty = yPos.get(e.target);
+
+				const p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+				const c1x = sx + 60;
+				const c2x = tx - 60;
+				p.setAttribute("d", `M ${sx} ${sy} C ${c1x} ${sy}, ${c2x} ${ty}, ${tx} ${ty}`);
+				p.setAttribute("fill", "none");
+				p.setAttribute("stroke", "#9ca3af");
+				p.setAttribute("stroke-width", "1.5");
+				edgeLayer.appendChild(p);
+
+					if (shouldRenderEdgeLabels) {
+						// midpoint of cubic bezier at t=0.5
+						const lx = 0.125 * sx + 0.375 * (sx + 60) + 0.375 * (tx - 60) + 0.125 * tx;
+						const ly = 0.125 * sy + 0.375 * sy + 0.375 * ty + 0.125 * ty - 8;
+						const edgeText = String(edgeByPair.get(`${e.source}->${e.target}`) || "");
+						const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+						const charWidth = 6.5;
+						const bgW = edgeText.length * charWidth + 4;
+						const bgH = 13;
+						bg.setAttribute("x", lx - bgW / 2);
+						bg.setAttribute("y", ly - bgH + 3);
+						bg.setAttribute("width", bgW);
+						bg.setAttribute("height", bgH);
+						bg.setAttribute("fill", "white");
+						bg.setAttribute("opacity", "0.75");
+						bg.setAttribute("rx", "2");
+						edgeLayer.appendChild(bg);
+						const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+						label.setAttribute("x", lx);
+						label.setAttribute("y", ly);
+						label.setAttribute("text-anchor", "middle");
+						label.setAttribute("font-family", "Consolas, Courier New, monospace");
+						label.setAttribute("font-size", "11");
+						label.setAttribute("fill", "#1e3a5f");
+						label.textContent = edgeText;
+					edgeLayer.appendChild(label);
+				}
+			}
+
+			for (const n of data.nodes) {
+				const x = xPos.get(n.id);
+				const y = yPos.get(n.id);
+				const term = !!n.is_terminal;
+
+				const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+				g.setAttribute("transform", `translate(${x} ${y})`);
+
+				const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+				c.setAttribute("r", term ? "14" : "11");
+				c.setAttribute("fill", term ? "#166534" : "#1d4ed8");
+				c.setAttribute("stroke", "#ffffff");
+				c.setAttribute("stroke-width", "2");
+				g.appendChild(c);
+
+				if (term && n.term_id !== null && n.term_id !== undefined) {
+					const mergedWord = mergedWordForNode(n.id);
+					const compactWord = mergedWord.length > 28 ? `${mergedWord.slice(0, 27)}...` : mergedWord;
+
+					const mergedText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+					mergedText.setAttribute("x", 0);
+					mergedText.setAttribute("y", 22);
+					mergedText.setAttribute("text-anchor", "middle");
+					mergedText.setAttribute("font-size", "10");
+					mergedText.setAttribute("fill", "#1f2937");
+					mergedText.setAttribute("font-family", "Consolas, Courier New, monospace");
+					mergedText.textContent = compactWord;
+					g.appendChild(mergedText);
+				}
+
+				nodeLayer.appendChild(g);
+			}
+
+			const meta = data.metadata || {};
+			stats.textContent = `nodes=${data.nodes.length} edges=${data.edges.length} vocab=${meta.vocabulary_size ?? "-"} edgeLabels=${shouldRenderEdgeLabels ? "on" : "off"}`;
+			resetView();
+		}
+
+		async function loadDefault() {
+			try {
+				const res = await fetch("../index/patricia_tree.json", { cache: "no-store" });
+				if (!res.ok) {
+					throw new Error(`HTTP ${res.status}`);
+				}
+				const json = await res.json();
+				renderGraph(json);
+			} catch (err) {
+				showHint(
+					"Could not fetch ../index/patricia_tree.json. If you opened this file directly via file://, use a local server (example: python -m http.server) or load the JSON manually via Open JSON."
+				);
+			}
+		}
+
+		document.getElementById("loadDefault").addEventListener("click", loadDefault);
+		document.getElementById("resetView").addEventListener("click", resetView);
+		showEdgeLabelsCheckbox.addEventListener("change", () => {
+			if (latestData) {
+				renderGraph(latestData);
+			}
+		});
+
+		document.getElementById("jsonFile").addEventListener("change", async (e) => {
+			const file = e.target.files && e.target.files[0];
+			if (!file) return;
+
+			try {
+				const text = await file.text();
+				const json = JSON.parse(text);
+				renderGraph(json);
+			} catch (err) {
+				showHint("Failed to parse selected JSON file. Please select a valid patricia_tree.json file.");
+			}
+		});
+
+		svg.addEventListener("wheel", (e) => {
+			e.preventDefault();
+			const factor = e.deltaY < 0 ? 1.08 : 0.92;
+			const newScale = Math.max(0.2, Math.min(4.5, state.scale * factor));
+			state.scale = newScale;
+			applyTransform();
+		}, { passive: false });
+
+		svg.addEventListener("pointerdown", (e) => {
+			state.dragging = true;
+			state.lastX = e.clientX;
+			state.lastY = e.clientY;
+			svg.setPointerCapture(e.pointerId);
+		});
+
+		svg.addEventListener("pointermove", (e) => {
+			if (!state.dragging) return;
+			const dx = e.clientX - state.lastX;
+			const dy = e.clientY - state.lastY;
+			state.tx += dx;
+			state.ty += dy;
+			state.lastX = e.clientX;
+			state.lastY = e.clientY;
+			applyTransform();
+		});
+
+		svg.addEventListener("pointerup", () => {
+			state.dragging = false;
+		});
+
+		svg.addEventListener("pointercancel", () => {
+			state.dragging = false;
+		});
+
+		applyTransform();
+		loadDefault();
+	</script>
+</body>
+</html>

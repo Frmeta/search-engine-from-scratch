@@ -2,6 +2,16 @@
 
 ### How To Run
 
+Run evaluation (default, without Patricia lookup):
+```
+python evaluation.py --k 10
+```
+
+Run evaluation with Patricia term lookup enabled:
+```
+python evaluation.py --k 10 --use-patricia
+```
+
 
 
 ### 1. Adding Elias-Gamma Compression
@@ -65,4 +75,13 @@ SPIMI (Single-Pass In-Memory Indexing)
 - Dynamically flushes to disk when memory threshold is exceeded
 - More memory-efficient for varying document sizes
 - Merges all flushed blocks at the end
-### 6. 
+
+### 6.  Patricia Tree
+
+Patricia Tree visualizations:
+- Normal
+![alt text](img/patricia-tree.png)
+- Mindmap
+![alt text](img/patricia-tree-mindmap.png)
+- Folders
+![alt text](img/patricia-tree-folder.png)

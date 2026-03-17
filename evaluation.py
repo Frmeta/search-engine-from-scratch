@@ -1,6 +1,7 @@
 import re
 import math
 import time
+import argparse
 from bsbi import BSBIIndex
 from compression import VBEPostingsEliasGammaTF
 from tqdm import tqdm
@@ -95,7 +96,7 @@ def extract_doc_id(doc_path):
     raise ValueError(f"Cannot parse doc id from path: {doc_path}")
   return int(match.group(1))
 
-def eval(qrels, query_file = "queries.txt", k = 1000):
+def eval(qrels, query_file = "queries.txt", k = 1000, use_patricia = False):
   """ 
     Iterate over all 30 queries and compute mean RBP for
     both TF-IDF and BM25 over top-k retrieved documents.
@@ -131,7 +132,7 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
 
       # Be careful: doc IDs from indexing may differ from the IDs listed in qrels.
       ranking_tfidf = []
-      for (score, doc) in BSBI_instance.retrieve_tfidf(query, k = k):
+      for (score, doc) in BSBI_instance.retrieve_tfidf(query, k = k, use_patricia = use_patricia):
           did = extract_doc_id(doc)
           ranking_tfidf.append(qrels[qid][did])
           rbp_scores_tfidf.append(rbp(ranking_tfidf))
@@ -141,7 +142,7 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
 
       ranking_bm25 = []
       start_bm25 = time.perf_counter()
-      results_bm25 = BSBI_instance.retrieve_bm25(query, k = k)
+      results_bm25 = BSBI_instance.retrieve_bm25(query, k = k, use_patricia = use_patricia)
       total_time_bm25 += (time.perf_counter() - start_bm25)
       for (score, doc) in results_bm25:
           did = extract_doc_id(doc)
@@ -153,7 +154,7 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
 
       ranking_bm25_wand = []
       start_bm25_wand = time.perf_counter()
-      results_bm25_wand = BSBI_instance.retrieve_bm25_wand(query, k = k)
+      results_bm25_wand = BSBI_instance.retrieve_bm25_wand(query, k = k, use_patricia = use_patricia)
       total_time_bm25_wand += (time.perf_counter() - start_bm25_wand)
       for (score, doc) in results_bm25_wand:
           did = extract_doc_id(doc)
@@ -203,9 +204,20 @@ def eval(qrels, query_file = "queries.txt", k = 1000):
     ])
 
 if __name__ == '__main__':
-  qrels = load_qrels()
+  parser = argparse.ArgumentParser(description="Evaluate retrieval metrics over all queries")
+  parser.add_argument("--qrels", default="qrels.txt", help="Path to qrels file")
+  parser.add_argument("--queries", default="queries.txt", help="Path to queries file")
+  parser.add_argument("--k", type=int, default=10, help="Top-k retrieved documents per query")
+  parser.add_argument(
+    "--use-patricia",
+    action="store_true",
+    help="Use Patricia tree for query term lookup during retrieval",
+  )
+  args = parser.parse_args()
+
+  qrels = load_qrels(qrel_file=args.qrels)
 
   assert qrels["Q1"][166] == 1, "qrels is incorrect"
   assert qrels["Q1"][300] == 0, "qrels is incorrect"
 
-  eval(qrels, k=10)
+  eval(qrels, query_file=args.queries, k=args.k, use_patricia=args.use_patricia)

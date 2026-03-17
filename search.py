@@ -8,6 +8,11 @@ parser.add_argument(
     action="store_true",
     help="Use SPIMI indexing instead of BSBI",
 )
+parser.add_argument(
+    "--patricia",
+    action="store_true",
+    help="Use Patricia Tree for query term lookup",
+)
 args = parser.parse_args()
 
 # Indexing has already been performed
@@ -32,9 +37,9 @@ queries = ["alkylated with radioactive iodoacetate", \
 for query in queries:
     print("Query  : ", query)
     print("TF-IDF Results:")
-    for (score, doc) in index_instance.retrieve_tfidf(query, k = 10):
+    for (score, doc) in index_instance.retrieve_tfidf(query, k = 10, use_patricia = args.patricia):
          print(f"{doc:30} {score:>.3f}")
     print("BM25 Results:")
-    for (score, doc) in index_instance.retrieve_bm25(query, k = 10):
+    for (score, doc) in index_instance.retrieve_bm25(query, k = 10, use_patricia = args.patricia):
         print(f"{doc:30} {score:>.3f}")
     print()

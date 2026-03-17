@@ -1,5 +1,6 @@
 import os
 import pickle
+import json
 import contextlib
 import heapq
 import time
@@ -10,7 +11,7 @@ import sys
 from bisect import bisect_left
 
 from index import InvertedIndexReader, InvertedIndexWriter
-from util import IdMap, sorted_merge_posts_and_tfs
+from util import IdMap, PatriciaTree, sorted_merge_posts_and_tfs
 from compression import (
     StandardPostings,
     VBEPostings,
@@ -43,6 +44,7 @@ class BSBIIndex:
 
         # Stores file names for all intermediate inverted indices
         self.intermediate_indices = []
+        self.patricia_tree = None
 
     def save(self):
         """Save doc_id_map and term_id_map to output directory via pickle."""
@@ -172,7 +174,81 @@ class BSBIIndex:
                 curr, postings, tf_list = t, postings_, tf_list_
         merged_index.append(curr, postings, tf_list)
 
-    def retrieve_tfidf(self, query, k = 10):
+    def _build_patricia_tree(self):
+        """Build Patricia tree lazily from known vocabulary."""
+        if self.patricia_tree is not None:
+            return
+
+        tree = PatriciaTree()
+        for term, term_id in self.term_id_map.str_to_id.items():
+            tree.insert(term, term_id)
+        self.patricia_tree = tree
+
+    def _query_to_term_ids(self, query, use_patricia=False):
+        """Map query tokens to existing term IDs without mutating term map."""
+        terms = []
+        for word in query.split():
+            if use_patricia:
+                self._build_patricia_tree()
+                term_id = self.patricia_tree.search(word)
+            else:
+                term_id = self.term_id_map.str_to_id.get(word)
+
+            if term_id is not None:
+                terms.append(term_id)
+        return terms
+
+    def export_patricia_tree_json(self, output_filename="patricia_tree.json"):
+        """Export Patricia tree into a graph-ready JSON file."""
+        if len(self.term_id_map) == 0:
+            self.load()
+
+        self._build_patricia_tree()
+
+        nodes = []
+        edges = []
+        node_id_counter = [0]
+
+        def new_node_id():
+            node_id_counter[0] += 1
+            return node_id_counter[0]
+
+        def dfs(node, current_id):
+            nodes.append({
+                "id": current_id,
+                "is_terminal": node.value is not None,
+                "term_id": node.value,
+            })
+
+            for edge_label, child in node.children.items():
+                child_id = new_node_id()
+                edges.append({
+                    "source": current_id,
+                    "target": child_id,
+                    "label": edge_label,
+                })
+                dfs(child, child_id)
+
+        root_id = 0
+        dfs(self.patricia_tree.root, root_id)
+
+        payload = {
+            "type": "patricia_tree",
+            "root": root_id,
+            "metadata": {
+                "vocabulary_size": len(self.term_id_map),
+                "node_count": len(nodes),
+                "edge_count": len(edges),
+            },
+            "nodes": nodes,
+            "edges": edges,
+        }
+
+        output_path = os.path.join(self.output_dir, output_filename)
+        with open(output_path, "w", encoding="utf8") as f:
+            json.dump(payload, f, indent=2)
+
+    def retrieve_tfidf(self, query, k = 10, use_patricia = False):
         """
         Perform ranked retrieval with TaaT (Term-at-a-Time).
         Returns top-K retrieval results.
@@ -211,7 +287,7 @@ class BSBIIndex:
         if len(self.term_id_map) == 0 or len(self.doc_id_map) == 0:
             self.load()
 
-        terms = [self.term_id_map[word] for word in query.split()]
+        terms = self._query_to_term_ids(query, use_patricia=use_patricia)
         with InvertedIndexReader(self.index_name, self.postings_encoding, directory=self.output_dir) as merged_index:
 
             scores = {}
@@ -231,7 +307,7 @@ class BSBIIndex:
             docs = [(score, self.doc_id_map[doc_id]) for (doc_id, score) in scores.items()]
             return sorted(docs, key = lambda x: x[0], reverse = True)[:k]
 
-    def retrieve_bm25(self, query, k = 10, k1 = 1.2, b = 0.75):
+    def retrieve_bm25(self, query, k = 10, k1 = 1.2, b = 0.75, use_patricia = False):
         """
         Perform ranked retrieval using BM25 with TaaT (Term-at-a-Time).
 
@@ -256,7 +332,7 @@ class BSBIIndex:
         if len(self.term_id_map) == 0 or len(self.doc_id_map) == 0:
             self.load()
 
-        terms = [self.term_id_map[word] for word in query.split()]
+        terms = self._query_to_term_ids(query, use_patricia=use_patricia)
         with InvertedIndexReader(self.index_name, self.postings_encoding, directory=self.output_dir) as merged_index:
             scores = {}
             N = len(merged_index.doc_length)
@@ -282,7 +358,7 @@ class BSBIIndex:
             docs = [(score, self.doc_id_map[doc_id]) for (doc_id, score) in scores.items()]
             return sorted(docs, key = lambda x: x[0], reverse = True)[:k]
 
-    def retrieve_bm25_wand(self, query, k = 10, k1 = 1.2, b = 0.75):
+    def retrieve_bm25_wand(self, query, k = 10, k1 = 1.2, b = 0.75, use_patricia = False):
         """
         Perform top-k BM25 retrieval with WAND pruning.
 
@@ -292,7 +368,7 @@ class BSBIIndex:
         if len(self.term_id_map) == 0 or len(self.doc_id_map) == 0:
             self.load()
 
-        query_terms = [self.term_id_map[word] for word in query.split()]
+        query_terms = self._query_to_term_ids(query, use_patricia=use_patricia)
         with InvertedIndexReader(self.index_name, self.postings_encoding, directory=self.output_dir) as merged_index:
             N = len(merged_index.doc_length)
             if N == 0:
@@ -402,6 +478,7 @@ class BSBIIndex:
                 td_pairs = None
     
         self.save()
+        self.export_patricia_tree_json()
 
         with InvertedIndexWriter(self.index_name, self.postings_encoding, directory = self.output_dir) as merged_index:
             with contextlib.ExitStack() as stack:
@@ -508,6 +585,7 @@ class SPIMIIndex(BSBIIndex):
                         index.append(term_id, sorted_doc_ids, tf_list)
         
         self.save()
+        self.export_patricia_tree_json()
 
         # Merge all intermediate indices into final index
         with InvertedIndexWriter(self.index_name, self.postings_encoding, directory=self.output_dir) as merged_index:
