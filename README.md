@@ -137,9 +137,22 @@ Conclusion:
 - BM25 using WAND top-K retrieval achieve faster average retrieval time taken than without WAND
 
 Visualized:
+- RBP (Rank-Biased Precision)
+
 ![alt text](img/rbp.png)
+
+
+- DCG (Discounted Cumulative Gain)
+
 ![alt text](img/dcg.png)
+
+- NDCG (Normalized DCG) 
+
 ![alt text](img/ndcg.png)
+
+
+- AP (Average Precision)
+
 ![alt text](img/ap.png)
 
 Conclusions:
