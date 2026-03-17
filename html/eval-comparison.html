@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IR System Evaluation Results</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .card { @apply bg-white p-6 rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen pb-12">
+
+    <nav class="bg-white border-b border-gray-200 py-4 px-8 sticky top-0 z-10">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">
+                Retrieval Performance Dashboard
+            </h1>
+            <span class="text-sm font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
+                Dataset: 30 Queries
+            </span>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-8">
+        
+        <!-- Summary Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="card bg-blue-50 border-blue-100">
+                <p class="text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">Top NDCG</p>
+                <p class="text-3xl font-bold">0.8888</p>
+                <p class="text-sm text-blue-700 mt-1">LSI + FAISS</p>
+            </div>
+            <div class="card bg-emerald-50 border-emerald-100">
+                <p class="text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">Top AP</p>
+                <p class="text-3xl font-bold">0.8456</p>
+                <p class="text-sm text-emerald-700 mt-1">LSI + FAISS</p>
+            </div>
+            <div class="card bg-purple-50 border-purple-100">
+                <p class="text-xs font-bold text-purple-600 uppercase tracking-wider mb-1">Fastest Method</p>
+                <p class="text-3xl font-bold">0.178s</p>
+                <p class="text-sm text-purple-700 mt-1">LSI + FAISS</p>
+            </div>
+            <div class="card bg-orange-50 border-orange-100">
+                <p class="text-xs font-bold text-orange-600 uppercase tracking-wider mb-1">Speed Boost</p>
+                <p class="text-3xl font-bold">9.3x</p>
+                <p class="text-sm text-orange-700 mt-1">vs BM25 Brute-force</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <!-- Effectiveness Comparison -->
+            <div class="card">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-lg font-semibold">Effectiveness Metrics</h2>
+                    <select id="metricSelector" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-1.5">
+                        <option value="ndcg">NDCG (Normalized Discounted Cumulative Gain)</option>
+                        <option value="ap">AP (Average Precision)</option>
+                        <option value="rbp">RBP (Rank-Biased Precision)</option>
+                        <option value="dcg">DCG (Discounted Cumulative Gain)</option>
+                    </select>
+                </div>
+                <div class="h-80">
+                    <canvas id="effectivenessChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Time Comparison -->
+            <div class="card">
+                <h2 class="text-lg font-semibold mb-6">Total Retrieval Time (Seconds)</h2>
+                <div class="h-80">
+                    <canvas id="timeChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Table -->
+        <div class="card overflow-x-auto">
+            <h2 class="text-lg font-semibold mb-4 text-slate-800">Raw Evaluation Data</h2>
+            <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-slate-600 uppercase text-xs font-bold">
+                    <tr>
+                        <th class="px-4 py-3 border-b">Retrieval Method</th>
+                        <th class="px-4 py-3 border-b text-center">RBP</th>
+                        <th class="px-4 py-3 border-b text-center">DCG</th>
+                        <th class="px-4 py-3 border-b text-center">NDCG</th>
+                        <th class="px-4 py-3 border-b text-center">AP</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 font-medium">TF-IDF</td>
+                        <td class="px-4 py-3 text-center">0.3720</td>
+                        <td class="px-4 py-3 text-center">1.9979</td>
+                        <td class="px-4 py-3 text-center">0.8454</td>
+                        <td class="px-4 py-3 text-center">0.7897</td>
+                    </tr>
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 font-medium">BM25 / BM25+WAND</td>
+                        <td class="px-4 py-3 text-center">0.4016</td>
+                        <td class="px-4 py-3 text-center">2.1365</td>
+                        <td class="px-4 py-3 text-center">0.8741</td>
+                        <td class="px-4 py-3 text-center font-semibold text-blue-600">0.8298</td>
+                    </tr>
+                    <tr class="hover:bg-blue-50/50 bg-blue-50/20 font-semibold">
+                        <td class="px-4 py-3 text-blue-800">LSI + FAISS</td>
+                        <td class="px-4 py-3 text-center">0.4161</td>
+                        <td class="px-4 py-3 text-center">2.2196</td>
+                        <td class="px-4 py-3 text-center">0.8888</td>
+                        <td class="px-4 py-3 text-center">0.8456</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <script>
+        // Data derived from the user input
+        const methods = ['TF-IDF', 'BM25', 'BM25+WAND', 'LSI+FAISS'];
+        
+        const metricData = {
+            rbp: [0.372, 0.4016, 0.4016, 0.4161],
+            dcg: [1.9979, 2.1365, 2.1365, 2.2196],
+            ndcg: [0.8454, 0.8741, 0.8741, 0.8888],
+            ap: [0.7897, 0.8298, 0.8298, 0.8456]
+        };
+
+        const timeMethods = ['BM25 Brute-Force', 'BM25 WAND', 'LSI + FAISS'];
+        const timeValues = [1.6694, 1.5976, 0.1786];
+
+        // Global Chart instances
+        let effectivenessChart;
+        let timeChart;
+
+        function initCharts() {
+            const ctx1 = document.getElementById('effectivenessChart').getContext('2d');
+            const ctx2 = document.getElementById('timeChart').getContext('2d');
+
+            // Effectiveness Chart
+            effectivenessChart = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: methods,
+                    datasets: [{
+                        label: 'Metric Value',
+                        data: metricData.ndcg,
+                        backgroundColor: (ctx) => {
+                            const index = ctx.dataIndex;
+                            return index === 3 ? '#3b82f6' : '#94a3b8';
+                        },
+                        borderRadius: 8,
+                        barThickness: 50
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: false, min: 0.3 }
+                    }
+                }
+            });
+
+            // Time Chart
+            timeChart = new Chart(ctx2, {
+                type: 'bar',
+                data: {
+                    labels: timeMethods,
+                    datasets: [{
+                        label: 'Seconds',
+                        data: timeValues,
+                        backgroundColor: ['#cbd5e1', '#94a3b8', '#8b5cf6'],
+                        borderRadius: 8,
+                        barThickness: 50
+                    }]
+                },
+                options: {
+                    indexAxis: 'y',
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // Dropdown Logic
+        document.getElementById('metricSelector').addEventListener('change', (e) => {
+            const metric = e.target.value;
+            effectivenessChart.data.datasets[0].data = metricData[metric];
+            
+            // Adjust scale if DCG is selected since it's > 1.0
+            if (metric === 'dcg') {
+                effectivenessChart.options.scales.y.min = 1.8;
+                effectivenessChart.options.scales.y.max = 2.4;
+            } else {
+                effectivenessChart.options.scales.y.min = 0.3;
+                effectivenessChart.options.scales.y.max = 1.0;
+            }
+            
+            effectivenessChart.update();
+        });
+
+        window.onload = initCharts;
+    </script>
+</body>
+</html>
