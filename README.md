@@ -87,7 +87,16 @@ Args:
 ## Deliverables
 ### 1. Adding Elias-Gamma Compression
 
-Comparing 5 types of compression
+Comparing 5 types of compression:
+- StandardPostings: Stores data as fixed-width 32-bit integers, offering the fastest access speeds but consuming the most storage space.
+
+- VBEPostings: Uses a variable number of bytes per integer with a continuation bit (no compression).
+
+- EliasGammaPostings: Employs a bit-level universal code to represent integers.
+
+- VBEPostingsEliasGammaTF: A hybrid approach that uses Variable Byte for large document IDs and Elias Gamma for small term frequencies.
+
+- EliasGammaPostingsVBETF: An inverse hybrid that applies bit-level encoding to document IDs and byte-level encoding to frequencies.
 ```
 Codec                                  Size (KB)     Time (s)
 --------------------------------------------------------------
@@ -99,7 +108,7 @@ EliasGammaPostingsVBETF                 1048.614        3.104
 ```
 
 Conclusion:
-- We picked VBEPostingsEliasGammaTF from this forth since it has smallest size (effective compression)
+- We picked VBEPostingsEliasGammaTF from this forth since it has smallest index file size (effective compression)
 
 ### 2. Adding BM25
 
@@ -207,3 +216,46 @@ Build latent semantic index (LSI) and FAISS vector index. Efficient SVD strategy
 - Keep latent dimension moderate (e.g., 128-512).
 - Use FAISS approximate indexes (IVF or HNSW) for scalable top-k retrieval.
 - For IVF, train on a sampled subset of vectors when corpus is very large.
+
+### 8. Adding Flask Frontend (Functional Search Engine UI)
+
+<img src="img/flask.png" alt="Flask Frontend" width="400">
+
+This project now includes a Flask app in [flask_search.py](flask_search.py) to provide a web frontend for interactive search.
+
+What it provides:
+- Web page at `/` with query input, top-k input, and toggles for Patricia lookup, LSI+FAISS, and adaptive retrieval.
+- API endpoint at `/search` (POST) that returns JSON search results.
+- Integrated retrieval backends:
+    - TF-IDF (BSBI/SPIMI)
+    - BM25 (BSBI/SPIMI)
+    - LSI+FAISS (optional)
+    - Adaptive retrieval (optional, with graceful warning if unavailable)
+
+Install dependency:
+```
+pip install -r requirements.txt
+```
+
+Run Flask frontend:
+```
+python flask_search.py
+```
+
+Open in browser:
+```
+http://127.0.0.1:5000
+```
+
+Run with all arguments in one command:
+```
+python flask_search.py --spimi --adaptive-index-dir pt_index --lsi-output-dir lsi_index --host 127.0.0.1 --port 5000 --debug
+```
+
+Flask CLI arguments:
+- `--spimi` (default: `False`): Use SPIMI index class instead of BSBI.
+- `--adaptive-index-dir` (default: `pt_index`): Directory for adaptive retrieval artifacts.
+- `--lsi-output-dir` (default: `lsi_index`): Directory for LSI+FAISS artifacts.
+- `--host` (default: `127.0.0.1`): Flask host.
+- `--port` (default: `5000`): Flask port.
+- `--debug` (default: `False`): Enable Flask debug mode.
