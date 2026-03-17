@@ -2,20 +2,20 @@ import array
 
 class StandardPostings:
     """ 
-    Class dengan static methods, untuk mengubah representasi postings list
-    yang awalnya adalah List of integer, berubah menjadi sequence of bytes.
-    Kita menggunakan Library array di Python.
+    Class with static methods to convert a postings list
+    from a list of integers into a sequence of bytes.
+    It uses Python's array library.
 
-    ASUMSI: postings_list untuk sebuah term MUAT di memori!
+    ASSUMPTION: postings_list for a term fits in memory.
 
-    Silakan pelajari:
+    See:
         https://docs.python.org/3/library/array.html
     """
 
     @staticmethod
     def encode(postings_list):
         """
-        Encode postings_list menjadi stream of bytes
+        Encode postings_list into a byte stream.
 
         Parameters
         ----------
@@ -25,28 +25,27 @@ class StandardPostings:
         Returns
         -------
         bytes
-            bytearray yang merepresentasikan urutan integer di postings_list
+            Bytearray representing integer order in postings_list
         """
-        # Untuk yang standard, gunakan L untuk unsigned long, karena docID
-        # tidak akan negatif. Dan kita asumsikan docID yang paling besar
-        # cukup ditampung di representasi 4 byte unsigned.
+        # For standard encoding, use L for unsigned long since docIDs
+        # are non-negative. Assume maximum docID fits in 4-byte unsigned.
         return array.array('L', postings_list).tobytes()
 
     @staticmethod
     def decode(encoded_postings_list):
         """
-        Decodes postings_list dari sebuah stream of bytes
+        Decode postings_list from a byte stream.
 
         Parameters
         ----------
         encoded_postings_list: bytes
-            bytearray merepresentasikan encoded postings list sebagai keluaran
-            dari static method encode di atas.
+            Bytearray representing encoded postings list produced
+            by static method encode above.
 
         Returns
         -------
         List[int]
-            list of docIDs yang merupakan hasil decoding dari encoded_postings_list
+            List of docIDs decoded from encoded_postings_list
         """
         decoded_postings_list = array.array('L')
         decoded_postings_list.frombytes(encoded_postings_list)
@@ -55,7 +54,7 @@ class StandardPostings:
     @staticmethod
     def encode_tf(tf_list):
         """
-        Encode list of term frequencies menjadi stream of bytes
+        Encode term-frequency list into a byte stream.
 
         Parameters
         ----------
@@ -65,68 +64,65 @@ class StandardPostings:
         Returns
         -------
         bytes
-            bytearray yang merepresentasikan nilai raw TF kemunculan term di setiap
-            dokumen pada list of postings
+            Bytearray representing raw TF values of term occurrences
+            for each document in the postings list
         """
         return StandardPostings.encode(tf_list)
 
     @staticmethod
     def decode_tf(encoded_tf_list):
         """
-        Decodes list of term frequencies dari sebuah stream of bytes
+        Decode term-frequency list from a byte stream.
 
         Parameters
         ----------
         encoded_tf_list: bytes
-            bytearray merepresentasikan encoded term frequencies list sebagai keluaran
-            dari static method encode_tf di atas.
+            Bytearray representing encoded term frequencies list produced
+            by static method encode_tf above.
 
         Returns
         -------
         List[int]
-            List of term frequencies yang merupakan hasil decoding dari encoded_tf_list
+            List of term frequencies decoded from encoded_tf_list
         """
         return StandardPostings.decode(encoded_tf_list)
 
 class VBEPostings:
     """ 
-    Berbeda dengan StandardPostings, dimana untuk suatu postings list,
-    yang disimpan di disk adalah sequence of integers asli dari postings
-    list tersebut apa adanya.
+    Different from StandardPostings, where for a postings list,
+    the data written to disk is the original integer sequence.
 
-    Pada VBEPostings, kali ini, yang disimpan adalah gap-nya, kecuali
-    posting yang pertama. Barulah setelah itu di-encode dengan Variable-Byte
-    Enconding algorithm ke bytestream.
+    In VBEPostings, stored values are gaps (except the first posting),
+    then encoded with Variable-Byte Encoding into a bytestream.
 
-    Contoh:
-    postings list [34, 67, 89, 454] akan diubah dulu menjadi gap-based,
-    yaitu [34, 33, 22, 365]. Barulah setelah itu di-encode dengan algoritma
-    compression Variable-Byte Encoding, dan kemudian diubah ke bytesream.
+    Example:
+    postings list [34, 67, 89, 454] is first converted to gap-based form,
+    i.e., [34, 33, 22, 365], then encoded with Variable-Byte Encoding
+    into a bytestream.
 
-    ASUMSI: postings_list untuk sebuah term MUAT di memori!
+    ASSUMPTION: postings_list for a term fits in memory.
 
     """
 
     @staticmethod
     def vb_encode_number(number):
         """
-        Encodes a number using Variable-Byte Encoding
-        Lihat buku teks kita!
+        Encode a number using Variable-Byte Encoding.
         """
         bytes = []
         while True:
-            bytes.insert(0, number % 128) # prepend ke depan
+            bytes.insert(0, number % 128) # prepend to front
             if number < 128:
                 break
             number = number // 128
-        bytes[-1] += 128 # bit awal pada byte terakhir diganti 1
+        bytes[-1] += 128 # set continuation bit on the last byte
         return array.array('B', bytes).tobytes()
 
     @staticmethod
     def vb_encode(list_of_numbers):
         """ 
-        Melakukan encoding (tentunya dengan compression) terhadap
-        list of numbers, dengan Variable-Byte Encoding
+        Encode (with compression) a list of numbers
+        using Variable-Byte Encoding.
         """
         bytes = []
         for number in list_of_numbers:
@@ -136,9 +132,8 @@ class VBEPostings:
     @staticmethod
     def encode(postings_list):
         """
-        Encode postings_list menjadi stream of bytes (dengan Variable-Byte
-        Encoding). JANGAN LUPA diubah dulu ke gap-based list, sebelum
-        di-encode dan diubah ke bytearray.
+        Encode postings_list into a byte stream (with Variable-Byte
+        Encoding). Convert to gap-based list before encoding.
 
         Parameters
         ----------
@@ -148,7 +143,7 @@ class VBEPostings:
         Returns
         -------
         bytes
-            bytearray yang merepresentasikan urutan integer di postings_list
+            Bytearray representing integer order in postings_list
         """
         gap_postings_list = [postings_list[0]]
         for i in range(1, len(postings_list)):
@@ -158,7 +153,7 @@ class VBEPostings:
     @staticmethod
     def encode_tf(tf_list):
         """
-        Encode list of term frequencies menjadi stream of bytes
+        Encode term-frequency list into a byte stream.
 
         Parameters
         ----------
@@ -168,16 +163,16 @@ class VBEPostings:
         Returns
         -------
         bytes
-            bytearray yang merepresentasikan nilai raw TF kemunculan term di setiap
-            dokumen pada list of postings
+            Bytearray representing raw TF values of term occurrences
+            for each document in the postings list
         """
         return VBEPostings.vb_encode(tf_list)
 
     @staticmethod
     def vb_decode(encoded_bytestream):
         """
-        Decoding sebuah bytestream yang sebelumnya di-encode dengan
-        variable-byte encoding.
+        Decode a bytestream previously encoded
+        with variable-byte encoding.
         """
         n = 0
         numbers = []
@@ -196,20 +191,19 @@ class VBEPostings:
     @staticmethod
     def decode(encoded_postings_list):
         """
-        Decodes postings_list dari sebuah stream of bytes. JANGAN LUPA
-        bytestream yang di-decode dari encoded_postings_list masih berupa
-        gap-based list.
+        Decode postings_list from a byte stream.
+        Note that decoded bytestream is still in gap-based form.
 
         Parameters
         ----------
         encoded_postings_list: bytes
-            bytearray merepresentasikan encoded postings list sebagai keluaran
-            dari static method encode di atas.
+            Bytearray representing encoded postings list produced
+            by static method encode above.
 
         Returns
         -------
         List[int]
-            list of docIDs yang merupakan hasil decoding dari encoded_postings_list
+            List of docIDs decoded from encoded_postings_list
         """
         decoded_postings_list = VBEPostings.vb_decode(encoded_postings_list)
         total = decoded_postings_list[0]
@@ -222,18 +216,18 @@ class VBEPostings:
     @staticmethod
     def decode_tf(encoded_tf_list):
         """
-        Decodes list of term frequencies dari sebuah stream of bytes
+        Decode term-frequency list from a byte stream.
 
         Parameters
         ----------
         encoded_tf_list: bytes
-            bytearray merepresentasikan encoded term frequencies list sebagai keluaran
-            dari static method encode_tf di atas.
+            Bytearray representing encoded term frequencies list produced
+            by static method encode_tf above.
 
         Returns
         -------
         List[int]
-            List of term frequencies yang merupakan hasil decoding dari encoded_tf_list
+            List of term frequencies decoded from encoded_tf_list
         """
         return VBEPostings.vb_decode(encoded_tf_list)
 
@@ -241,36 +235,36 @@ class VBEPostings:
 
 class EliasGammaPostings:
     """ 
-    Elias-Gamma postings: docIDs disimpan sebagai gap list lalu di-encode
-    dengan Elias-Gamma. Untuk TF list, nilai TF di-encode langsung.
+    Elias-Gamma postings: docIDs are stored as gap list and then encoded
+    with Elias-Gamma. TF list values are encoded directly.
 
-    Karena Elias-Gamma berbasis bit, bytestream menyimpan:
-    - 1 byte pertama: jumlah padding bit 0 di akhir payload (0..7)
-    - bytes berikutnya: payload bitstream hasil encode gamma
+    Since Elias-Gamma is bit-based, bytestream stores:
+    - first byte: number of 0-padding bits at payload end (0..7)
+    - next bytes: gamma-encoded payload bitstream
 
-    ASUMSI: semua bilangan yang di-encode adalah integer non-negatif (>= 0).
-    Nilai 0 ditangani dengan transform shift: encode(n + 1), decode(m - 1).
+    ASSUMPTION: all encoded numbers are non-negative integers (>= 0).
+    Value 0 is handled via shift transform: encode(n + 1), decode(m - 1).
     """
 
     @staticmethod
     def gamma_encode_number(number):
-        """Encode satu bilangan positif dengan Elias-Gamma."""
+        """Encode one positive integer with Elias-Gamma."""
         if number <= 0:
-            raise ValueError(f"Elias-Gamma hanya untuk bilangan positif, dapat {number}")
+            raise ValueError(f"Elias-Gamma only supports positive integers, got {number}")
         binary = bin(number)[2:]
         prefix = '0' * (len(binary) - 1)
         return prefix + binary
 
     @staticmethod
     def gamma_encode(list_of_numbers):
-        """Encode list of non-negative integers ke bytestream Elias-Gamma."""
+        """Encode a list of non-negative integers to Elias-Gamma bytestream."""
         bits = []
         for idx, n in enumerate(list_of_numbers):
             if n < 0:
                 raise ValueError(
-                    f"Elias-Gamma hanya untuk bilangan non-negatif, dapat {n} pada index {idx}"
+                    f"Elias-Gamma only supports non-negative integers, got {n} at index {idx}"
                 )
-            # Shift +1 agar nilai 0 bisa direpresentasikan oleh Elias-Gamma.
+            # Shift +1 so value 0 can be represented in Elias-Gamma.
             bits.append(EliasGammaPostings.gamma_encode_number(n + 1))
         bitstream = ''.join(bits)
         padding = (8 - (len(bitstream) % 8)) % 8
@@ -285,8 +279,8 @@ class EliasGammaPostings:
     @staticmethod
     def encode(postings_list):
         """
-        Encode postings_list menjadi stream of bytes (dengan Elias-Gamma).
-        Postings diubah dulu ke gap-based list.
+        Encode postings_list into a byte stream (with Elias-Gamma).
+        Postings are first converted to a gap-based list.
 
         Parameters
         ----------
@@ -296,7 +290,7 @@ class EliasGammaPostings:
         Returns
         -------
         bytes
-            bytearray yang merepresentasikan urutan integer di postings_list
+            Bytearray representing integer order in postings_list
         """
         if not postings_list:
             return EliasGammaPostings.gamma_encode([])
@@ -309,7 +303,7 @@ class EliasGammaPostings:
     @staticmethod
     def encode_tf(tf_list):
         """
-        Encode list of term frequencies menjadi stream of bytes
+        Encode term-frequency list into a byte stream.
 
         Parameters
         ----------
@@ -319,8 +313,8 @@ class EliasGammaPostings:
         Returns
         -------
         bytes
-            bytearray yang merepresentasikan nilai raw TF kemunculan term di setiap
-            dokumen pada list of postings
+            Bytearray representing raw TF values of term occurrences
+            for each document in the postings list
         """
         return EliasGammaPostings.gamma_encode(tf_list)
 
@@ -333,7 +327,7 @@ class EliasGammaPostings:
         padding = encoded_bytestream[0]
         payload = encoded_bytestream[1:]
         if padding < 0 or padding > 7:
-            raise ValueError("Padding Elias-Gamma tidak valid")
+            raise ValueError("Invalid Elias-Gamma padding")
 
         bitstream = ''.join(format(byte, '08b') for byte in payload)
         if padding:
@@ -352,32 +346,31 @@ class EliasGammaPostings:
                 break
 
             if i + zeros >= n_bits:
-                raise ValueError("Bitstream Elias-Gamma terpotong")
+                raise ValueError("Truncated Elias-Gamma bitstream")
 
             number_bits = bitstream[i:i + zeros + 1]
             numbers.append(int(number_bits, 2))
             i += zeros + 1
 
-        # Inverse transform dari shift +1 saat encoding.
+        # Inverse transform of shift +1 used during encoding.
         return [n - 1 for n in numbers]
 
     @staticmethod
     def decode(encoded_postings_list):
         """
-        Decodes postings_list dari sebuah stream of bytes. JANGAN LUPA
-        bytestream yang di-decode dari encoded_postings_list masih berupa
-        gap-based list.
+        Decode postings_list from a byte stream.
+        Note that decoded bytestream is still in gap-based form.
 
         Parameters
         ----------
         encoded_postings_list: bytes
-            bytearray merepresentasikan encoded postings list sebagai keluaran
-            dari static method encode di atas.
+            Bytearray representing encoded postings list produced
+            by static method encode above.
 
         Returns
         -------
         List[int]
-            list of docIDs yang merupakan hasil decoding dari encoded_postings_list
+            List of docIDs decoded from encoded_postings_list
         """
         decoded_postings_list = EliasGammaPostings.gamma_decode(encoded_postings_list)
         if not decoded_postings_list:
@@ -392,18 +385,18 @@ class EliasGammaPostings:
     @staticmethod
     def decode_tf(encoded_tf_list):
         """
-        Decodes list of term frequencies dari sebuah stream of bytes
+        Decode term-frequency list from a byte stream.
 
         Parameters
         ----------
         encoded_tf_list: bytes
-            bytearray merepresentasikan encoded term frequencies list sebagai keluaran
-            dari static method encode_tf di atas.
+            Bytearray representing encoded term frequencies list produced
+            by static method encode_tf above.
 
         Returns
         -------
         List[int]
-            List of term frequencies yang merupakan hasil decoding dari encoded_tf_list
+            List of term frequencies decoded from encoded_tf_list
         """
         return EliasGammaPostings.gamma_decode(encoded_tf_list)
 
@@ -411,8 +404,8 @@ class EliasGammaPostings:
 class VBEPostingsEliasGammaTF:
     """
     Hybrid codec:
-    - Postings list (docID gaps) memakai Variable-Byte Encoding
-    - TF list memakai Elias-Gamma Encoding
+    - Postings list (docID gaps) uses Variable-Byte Encoding
+    - TF list uses Elias-Gamma Encoding
     """
 
     @staticmethod
@@ -435,8 +428,8 @@ class VBEPostingsEliasGammaTF:
 class EliasGammaPostingsVBETF:
     """
     Hybrid codec:
-    - Postings list (docID gaps) memakai Elias-Gamma Encoding
-    - TF list memakai Variable-Byte Encoding
+    - Postings list (docID gaps) uses Elias-Gamma Encoding
+    - TF list uses Variable-Byte Encoding
     """
 
     @staticmethod
@@ -469,15 +462,15 @@ if __name__ == '__main__':
         print(Postings.__name__)
         encoded_postings_list = Postings.encode(postings_list)
         encoded_tf_list = Postings.encode_tf(tf_list)
-        print("byte hasil encode postings: ", encoded_postings_list)
-        print("ukuran encoded postings   : ", len(encoded_postings_list), "bytes")
-        print("byte hasil encode TF list : ", encoded_tf_list)
-        print("ukuran encoded postings   : ", len(encoded_tf_list), "bytes")
+        print("encoded postings bytes: ", encoded_postings_list)
+        print("encoded postings size : ", len(encoded_postings_list), "bytes")
+        print("encoded TF list bytes : ", encoded_tf_list)
+        print("encoded TF size       : ", len(encoded_tf_list), "bytes")
         
         decoded_posting_list = Postings.decode(encoded_postings_list)
         decoded_tf_list = Postings.decode_tf(encoded_tf_list)
-        print("hasil decoding (postings): ", decoded_posting_list)
-        print("hasil decoding (TF list) : ", decoded_tf_list)
-        assert decoded_posting_list == postings_list, "hasil decoding tidak sama dengan postings original"
-        assert decoded_tf_list == tf_list, "hasil decoding tidak sama dengan postings original"
+        print("decoded postings: ", decoded_posting_list)
+        print("decoded TF list : ", decoded_tf_list)
+        assert decoded_posting_list == postings_list, "decoded output does not match original postings"
+        assert decoded_tf_list == tf_list, "decoded output does not match original TF list"
         print()

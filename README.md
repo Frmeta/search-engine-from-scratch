@@ -1,4 +1,10 @@
-# 1. Adding Elias-Gamma Compression
+# Search Engine From Scratch
+
+### How To Run
+
+
+
+### 1. Adding Elias-Gamma Compression
 
 Comparing 5 types of compression
 ```
