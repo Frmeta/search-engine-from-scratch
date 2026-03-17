@@ -137,10 +137,10 @@ Conclusion:
 - BM25 using WAND top-K retrieval achieve faster average retrieval time taken than without WAND
 
 Visualized:
-![alt text](rbp.png)
-![alt text](dcg.png)
-![alt text](ndcg.png)
-![alt text](ap.png)
+![alt text](img/rbp.png)
+![alt text](img/dcg.png)
+![alt text](img/ndcg.png)
+![alt text](img/ap.png)
 
 Conclusions:
 - Best Quality: LSI+FAISS is the most effective method across all ranking metrics (RBP, DCG, NDCG, and AP).
