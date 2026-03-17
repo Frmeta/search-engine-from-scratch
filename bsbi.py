@@ -4,10 +4,18 @@ import contextlib
 import heapq
 import time
 import math
+import shutil
+import argparse
 
 from index import InvertedIndexReader, InvertedIndexWriter
 from util import IdMap, sorted_merge_posts_and_tfs
-from compression import StandardPostings, VBEPostings
+from compression import (
+    StandardPostings,
+    VBEPostings,
+    EliasGammaPostings,
+    VBEPostingsEliasGammaTF,
+    EliasGammaPostingsVBETF,
+)
 from tqdm import tqdm
 
 class BSBIIndex:
@@ -252,8 +260,71 @@ class BSBIIndex:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="BSBI indexing runner")
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Bandingkan semua postings encoding (size KB dan waktu indexing)",
+    )
+    args = parser.parse_args()
 
-    BSBI_instance = BSBIIndex(data_dir = 'collection', \
-                              postings_encoding = VBEPostings, \
-                              output_dir = 'index')
-    BSBI_instance.index() # memulai indexing!
+    def clean_output_dir(output_dir):
+        """Hapus file index lama agar benchmark antar codec adil."""
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+            return
+
+        for filename in os.listdir(output_dir):
+            if filename == '.gitkeep':
+                continue
+            path = os.path.join(output_dir, filename)
+            if os.path.isfile(path):
+                os.remove(path)
+            elif os.path.isdir(path):
+                shutil.rmtree(path)
+
+    def non_intermediate_index_size_kb(output_dir):
+        """Hitung total ukuran file (KB) di output_dir selain intermediate_index*."""
+        total_bytes = 0
+        for filename in os.listdir(output_dir):
+            if filename.startswith('intermediate_index'):
+                continue
+            path = os.path.join(output_dir, filename)
+            if os.path.isfile(path):
+                total_bytes += os.path.getsize(path)
+        return total_bytes / 1024.0
+
+    if args.debug:
+        codecs = [
+            StandardPostings,
+            VBEPostings,
+            EliasGammaPostings,
+            VBEPostingsEliasGammaTF,
+            EliasGammaPostingsVBETF,
+        ]
+
+        results = []
+        for codec in codecs:
+            clean_output_dir('index')
+            start = time.perf_counter()
+            BSBIIndex(
+                data_dir='collection',
+                postings_encoding=codec,
+                output_dir='index'
+            ).index()
+            elapsed = time.perf_counter() - start
+            size_kb = non_intermediate_index_size_kb('index')
+            results.append((codec.__name__, size_kb, elapsed))
+
+        print("\nPerbandingan postings_encoding (size non-intermediate & waktu indexing)")
+        print(f"{'Codec':35} {'Size (KB)':>12} {'Time (s)':>12}")
+        print("-" * 62)
+        for name, size_kb, elapsed in results:
+            print(f"{name:35} {size_kb:12.3f} {elapsed:12.3f}")
+    else:
+        BSBI_instance = BSBIIndex(
+            data_dir='collection',
+            postings_encoding=VBEPostingsEliasGammaTF,
+            output_dir='index'
+        )
+        BSBI_instance.index()  # memulai indexing!
