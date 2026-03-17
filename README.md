@@ -136,24 +136,24 @@ BM25 WAND avg/query (s)        = 0.0523
 Conclusion:
 - BM25 using WAND top-K retrieval achieve faster average retrieval time taken than without WAND
 
-Visualized:
+Visualized [[html/eval-comparison.html](html/eval-comparison.html)]:
 - RBP (Rank-Biased Precision)
 
-![alt text](img/rbp.png)
+<img src="img/rbp.png" alt="RBP chart" width="400">
 
 
 - DCG (Discounted Cumulative Gain)
 
-![alt text](img/dcg.png)
+<img src="img/dcg.png" alt="DCG chart" width="400">
 
 - NDCG (Normalized DCG) 
 
-![alt text](img/ndcg.png)
+<img src="img/ndcg.png" alt="NDCG chart" width="400">
 
 
 - AP (Average Precision)
 
-![alt text](img/ap.png)
+<img src="img/ap.png" alt="AP chart" width="400">
 
 Conclusions:
 - Best Quality: LSI+FAISS is the most effective method across all ranking metrics (RBP, DCG, NDCG, and AP).
@@ -186,17 +186,17 @@ python .\evaluation.py --use-patricia
 ```
 
 Patricia Tree visualizations of the whole vocabulary
-- Normal [[html]](html/patricia-tree.html)<br>
+- Normal [[html/patricia-tree.html](html/patricia-tree.html)]<br>
 
-![alt text](img/patricia-tree.png)
+<img src="img/patricia-tree.png" alt="Patricia tree normal" width="400">
 
-- Mindmap [[html]](html/patricia-tree-mindmap.html)<br>
+- Mindmap [[html/patricia-tree-mindmap.html](html/patricia-tree-mindmap.html)]<br>
 
-![alt text](img/patricia-tree-mindmap.png)
+<img src="img/patricia-tree-mindmap.png" alt="Patricia tree mindmap" width="400">
 
-- Folders [[html]](html/patricia-tree-folder.html)<br>
+- Folders [[html/patricia-tree-folder.html](html/patricia-tree-folder.html)]<br>
 
-![alt text](img/patricia-tree-folder.png)
+<img src="img/patricia-tree-folder.png" alt="Patricia tree folders" width="400">
 
 
 ### 7. Adding LSI + FAISS (Vector Indexing)
