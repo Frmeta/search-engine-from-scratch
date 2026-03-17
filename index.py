@@ -53,6 +53,8 @@ class InvertedIndex:
         self.doc_length = {}    # key: doc ID (int), value: document length (number of tokens)
                     # Useful for score normalization by document length
                     # when computing TF-IDF or BM25 scores
+        self.total_doc_length = 0
+        self.avg_doc_length = 0.0
 
     def __enter__(self):
         """
@@ -77,7 +79,16 @@ class InvertedIndex:
 
         # Load postings dict and terms iterator from metadata file
         with open(self.metadata_file_path, 'rb') as f:
-            self.postings_dict, self.terms, self.doc_length = pickle.load(f)
+            metadata = pickle.load(f)
+            if len(metadata) == 3:
+                self.postings_dict, self.terms, self.doc_length = metadata
+                self.total_doc_length = sum(self.doc_length.values())
+                self.avg_doc_length = self.total_doc_length / len(self.doc_length) if self.doc_length else 0.0
+            elif len(metadata) == 4:
+                self.postings_dict, self.terms, self.doc_length, self.avg_doc_length = metadata
+                self.total_doc_length = sum(self.doc_length.values())
+            else:
+                self.postings_dict, self.terms, self.doc_length, self.total_doc_length, self.avg_doc_length = metadata
             self.term_iter = self.terms.__iter__()
 
         return self
@@ -87,9 +98,19 @@ class InvertedIndex:
         # Close index file
         self.index_file.close()
 
+        if self.total_doc_length == 0 and self.doc_length:
+            self.total_doc_length = sum(self.doc_length.values())
+        self.avg_doc_length = self.total_doc_length / len(self.doc_length) if self.doc_length else 0.0
+
         # Save metadata (postings dict and terms) to metadata file using pickle
         with open(self.metadata_file_path, 'wb') as f:
-            pickle.dump([self.postings_dict, self.terms, self.doc_length], f)
+            pickle.dump([
+                self.postings_dict,
+                self.terms,
+                self.doc_length,
+                self.total_doc_length,
+                self.avg_doc_length,
+            ], f)
 
 
 class InvertedIndexReader(InvertedIndex):
@@ -193,6 +214,7 @@ class InvertedIndexWriter(InvertedIndex):
             if doc_id not in self.doc_length:
                 self.doc_length[doc_id] = 0
             self.doc_length[doc_id] += freq
+            self.total_doc_length += freq
 
         self.index_file.seek(0, os.SEEK_END)
         curr_position_in_byte = self.index_file.tell()
